@@ -354,7 +354,7 @@ These are restricted by default and can be relaxed with `--unrestricted-scoped`.
 - TCP restrictions only apply to "classic" TCP sockets, not Multipath TCP. Since Go 1.24, `net.Listen` defaults to Multipath TCP and therefore cannot currently be restricted by Landlock (kernel bug [landlock-lsm/linux#54](https://github.com/landlock-lsm/linux/issues/54))
 - This version does not restrict UDP traffic
 - `--best-effort` may drop controls that the running kernel ABI does not support; it does not currently report the effective policy
-- `--ldd` may invoke `ldconfig` through the ambient `PATH` before confinement; do not use it with an untrusted environment or target until this is remediated
+- `--ldd` resolves dependencies without executing `ldconfig` or another helper; it fails closed if a library is only discoverable through a non-standard loader-cache entry
 - Some operations may require additional permissions
 - Files, directories, and sockets opened before sandboxing are not subject to Landlock restrictions; landrun does not currently close inherited file descriptors
 

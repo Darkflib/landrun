@@ -49,6 +49,10 @@ Recommended remediation:
 
 Severity: High impact with an attacker-controlled `PATH` entry.
 
+Status: Remediated. Dependency discovery no longer invokes `ldconfig` or any
+other helper. Libraries that cannot be resolved from the ELF search paths and
+architecture-specific standard directories now cause the launch to fail.
+
 The ELF dependency parser is non-executing, but its cache fallback invokes
 `exec.Command("ldconfig", "-p")`. This lookup uses the launcher's ambient
 `PATH`, and it happens before `sandbox.Apply`. A malicious ELF can trigger the
@@ -67,9 +71,6 @@ Recommended remediation:
   helper is executed.
 - Treat all executable and dependency discovery as part of the security
   boundary and complete it without running target-controlled code.
-
-Until fixed, do not use `--ldd` when the ambient environment or target is
-untrusted.
 
 ### LL-003: Out-of-range ports wrap to a different policy
 
@@ -159,7 +160,6 @@ module reproducibility checks, or vulnerability scan.
 Landrun can still provide useful defense in depth when its limitations match the
 threat model:
 
-- Avoid `--ldd` for untrusted inputs.
 - Start it from a parent that does not expose unintended file descriptors.
 - Use only validated literal port values.
 - Do not assume `--best-effort` enforced options unavailable to the host ABI.

@@ -1,18 +1,15 @@
 package exec
 
 import (
-	"os/exec"
 	"syscall"
 
 	"github.com/zouuup/landrun/internal/log"
 )
 
-func Run(args []string, env []string) error {
-	binary, err := exec.LookPath(args[0])
-	if err != nil {
-		return err
-	}
-
+// Run replaces the current process with the already-resolved binary. Command
+// lookup belongs before sandbox setup; repeating it here would let PATH select
+// a different executable after the policy has been constructed.
+func Run(binary string, args []string, env []string) error {
 	log.Info("Executing: %v", args)
 
 	// Only pass the explicitly specified environment variables

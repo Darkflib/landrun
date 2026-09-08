@@ -16,7 +16,7 @@ be enforced.
 
 ## Milestone 0: Establish a trustworthy CI baseline
 
-Status: implemented in the current branch; pending remote CI confirmation.
+Status: complete.
 
 - [x] Run unit tests with the minimum supported Go release and stable Go.
 - [x] Test on amd64 and arm64 Linux runners.
@@ -38,11 +38,11 @@ Target: next security-focused release.
 
 ### Remove pre-sandbox helper execution
 
-- Replace the `ldconfig` subprocess with an in-process cache parser, or remove
+- [x] Replace the `ldconfig` subprocess with an in-process cache parser, or remove
   the automatic cache fallback.
-- Resolve the target executable once and carry the resolved identity through
+- [x] Resolve the target executable once and carry the resolved identity through
   policy creation and `exec`.
-- Add hostile-`PATH`, unresolved-SONAME, and executable-replacement regression
+- [x] Add hostile-`PATH`, unresolved-SONAME, and executable-replacement regression
   tests.
 
 Acceptance gate: `--ldd` performs no `execve` before Landlock enforcement.
