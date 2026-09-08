@@ -36,7 +36,7 @@ func standardLibDirs(class elf.Class, machine elf.Machine, data elf.Data, flags 
 		dirs = append(multiarchLibDirs(tuple), "/lib64", "/usr/lib64")
 	case machine == elf.EM_ARM:
 		if data == elf.ELFDATA2MSB {
-			dirs = multiarchLibDirs("armeb-linux-gnueabihf", "armeb-linux-gnueabi")
+			dirs = multiarchLibDirs("armeb-linux-gnu")
 		} else {
 			dirs = multiarchLibDirs("arm-linux-gnueabihf", "arm-linux-gnueabi")
 		}
@@ -55,8 +55,10 @@ func standardLibDirs(class elf.Class, machine elf.Machine, data elf.Data, flags 
 	case machine == elf.EM_PPC:
 		if data == elf.ELFDATA2LSB {
 			dirs = multiarchLibDirs("powerpcle-linux-gnu")
+		} else if flags&ppcEmbedded != 0 {
+			dirs = multiarchLibDirs("powerpc-linux-gnuspe")
 		} else {
-			dirs = multiarchLibDirs("powerpc-linux-gnu", "powerpc-linux-gnuspe")
+			dirs = multiarchLibDirs("powerpc-linux-gnu")
 		}
 	case machine == elf.EM_S390:
 		if class == elf.ELFCLASS64 {
@@ -82,6 +84,8 @@ func standardLibDirs(class elf.Class, machine elf.Machine, data elf.Data, flags 
 }
 
 const (
+	ppcEmbedded = 0x80000000
+
 	mipsABI2     = 0x00000020
 	mipsArchMask = 0xf0000000
 	mipsArch32R6 = 0x90000000
