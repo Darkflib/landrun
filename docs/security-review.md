@@ -5,6 +5,11 @@ Status: issues documented here are not fixed unless the entry explicitly says ot
 Review date: 2026-09-08
 Reviewed commit: `811cfff51ceaf3d9843708aa6d22e9b84ccac8b4`
 
+Remediation status below is tracked past that commit; each entry names the pull
+request and commit that closed it. See
+[the verification pass](verification-2026-09-08.md) for a follow-up check of
+this document, the roadmap, the merged pull requests, and CI at `28d1a11`.
+
 ## Scope and threat model
 
 This review examined landrun as a launcher for reducing the impact of buggy or
@@ -22,9 +27,10 @@ seccomp filtering, resource limits, or destination-address filtering.
 
 Severity: High for a general-purpose sandbox launcher.
 
-Status: Remediated. Descriptors 3 and above are marked close-on-exec by
-default. `--preserve-fd` provides an explicit, validated opt-in for descriptor
-passing; standard input, output, and error remain inherited.
+Status: Remediated in #3 (`be5f03f`). Descriptors 3 and above are marked
+close-on-exec by default. `--preserve-fd` provides an explicit, validated
+opt-in for descriptor passing; standard input, output, and error remain
+inherited.
 
 `internal/exec.Run` calls `syscall.Exec` without closing or marking inherited
 file descriptors close-on-exec. Landlock does not retroactively restrict files
@@ -53,9 +59,11 @@ Recommended remediation:
 
 Severity: High impact with an attacker-controlled `PATH` entry.
 
-Status: Remediated. Dependency discovery no longer invokes `ldconfig` or any
-other helper. Libraries that cannot be resolved from the ELF search paths and
-architecture-specific standard directories now cause the launch to fail. The
+Status: Remediated in #2 (`1987fe5`), with the supported-ABI boundary
+narrowed in #4 (`28d1a11`). Dependency discovery no longer invokes `ldconfig`
+or any other helper. Libraries that cannot be resolved from the ELF search
+paths and architecture-specific standard directories now cause the launch to
+fail. The
 standard-directory lookup accounts for ELF class, endianness, and ARM floating
 point ABI across the supported Intel and ARM targets. Other ELF ABIs are
 rejected explicitly rather than searched using guessed directories.
@@ -83,6 +91,8 @@ Recommended remediation:
 
 Severity: Medium.
 
+Status: Open. Still present at `internal/sandbox/sandbox.go:238` and `:243`.
+
 CLI ports are parsed as `int` and converted directly to `uint16`. Negative and
 greater-than-65535 values therefore wrap rather than fail. For example,
 `--connect-tcp 131071` becomes port 65535.
@@ -107,6 +117,8 @@ Recommended remediation:
 Severity: Medium, rising to High when callers treat successful startup as proof
 that every requested restriction is active.
 
+Status: Open.
+
 The default policy targets Landlock ABI 9. On an older kernel, `--best-effort`
 downgrades the configuration and may remove access rights explicitly requested
 on the command line. The command still starts without reporting the effective
@@ -126,6 +138,39 @@ Recommended remediation:
 - Add `--probe` and an effective-policy report showing the kernel ABI, selected
   ABI, enforced access rights, and unsupported controls.
 - Add tests for every option at one ABI below its introduction.
+
+### LL-005: Domain overrides silently discard rules from the same domain
+
+Severity: Medium, rising to High when callers treat successful startup as proof
+that every requested restriction is active.
+
+Status: Open. Found during the 2026-09-08 verification pass, not the original
+review.
+
+`--unrestricted-filesystem` discards every `--ro`, `--rw`, `--rox` and `--rwx`
+rule with no diagnostic, and `--unix` with only a `log.Info` line that is
+invisible at the default `--log-level error`. `--unrestricted-network` discards
+`--bind-tcp` and `--connect-tcp` with no diagnostic. landrun exits 0 in every
+case, so:
+
+```text
+landrun --unrestricted-network --connect-tcp 443 -- cmd
+```
+
+reports success having enforced nothing that was requested. The rules are built
+inside `if !cfg.UnrestrictedFilesystem` and `if !cfg.UnrestrictedNetwork` blocks
+at `internal/sandbox/sandbox.go:206-244`.
+
+This is the same class as LL-004, but it does not involve ABI negotiation: the
+conflict is visible from the parsed flags alone, before any kernel interaction.
+
+Recommended remediation:
+
+- Treat a rule flag combined with the matching `--unrestricted-*` flag as a
+  configuration error and refuse to start.
+- Keep the check in the policy-validation path, so it shares the launcher error
+  code with the other input-validation failures.
+- Add negative tests for each pairing.
 
 ## Platform limitations relevant to the findings
 
@@ -151,7 +196,9 @@ The review performed the following checks:
 - All Go test packages were cross-compiled and passed on the ABI 6 validation
   host.
 - The offline integration suite passed against a statically linked amd64
-  artifact.
+  artifact. The suite injects `--best-effort` into every case, so on an ABI 6
+  host it did not exercise the ABI 7 to ABI 9 access rights; see
+  [the verification pass](verification-2026-09-08.md) section B1.
 - `go vet ./...` passed.
 - `govulncheck ./...` reported no known reachable vulnerabilities on the review
   date.

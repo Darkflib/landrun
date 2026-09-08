@@ -1,9 +1,11 @@
 # Hardening roadmap
 
 This roadmap turns the findings in [the security review](docs/security-review.md)
-into measurable implementation and release gates. Security fixes should remain
-small, reviewable, and fail closed when an explicitly requested control cannot
-be enforced.
+into measurable implementation and release gates. A follow-up
+[verification pass](docs/verification-2026-09-08.md) records what was confirmed
+at `28d1a11` and what remains open. Security fixes should remain small,
+reviewable, and fail closed when an explicitly requested control cannot be
+enforced.
 
 ## Principles
 
@@ -32,6 +34,10 @@ Status: complete.
 Acceptance gate: every pull request exercises policy behavior rather than only
 proving that the source compiles.
 
+Bound on that gate: hosted runners report Landlock ABI 7, and the integration
+suite runs in best-effort mode, so behavior specific to ABI 8 and ABI 9 is not
+exercised by CI today. Milestone 2 closes this.
+
 ## Milestone 1: Close policy-boundary issues
 
 Target: next security-focused release.
@@ -42,8 +48,10 @@ Target: next security-focused release.
   the automatic cache fallback.
 - [x] Resolve the target executable once and carry the resolved identity through
   policy creation and `exec`.
-- [x] Add hostile-`PATH`, unresolved-SONAME, and executable-replacement regression
-  tests.
+- [x] Add hostile-`PATH` and unresolved-SONAME regression tests, and prove that
+  `exec` does not re-consult `PATH` after policy construction.
+- [ ] Carry the resolved executable as a descriptor rather than a path, so the
+  file cannot be replaced between policy construction and `execve`.
 - [x] Preserve standard multiarch lookup for supported Intel and ARM ELF ABIs,
   and reject other ABIs without reintroducing a helper process.
 
@@ -82,6 +90,20 @@ Acceptance gate: invalid input cannot silently produce a different policy.
 Acceptance gate: a successful launch proves that every explicit rule was
 enforced.
 
+### Fail closed when a domain override discards requested rules
+
+Tracked as LL-005.
+
+- Reject a rule flag combined with the matching `--unrestricted-*` flag instead
+  of dropping the rule and exiting 0.
+- Cover `--ro`, `--rw`, `--rox`, `--rwx` and `--unix` against
+  `--unrestricted-filesystem`, and `--bind-tcp` and `--connect-tcp` against
+  `--unrestricted-network`.
+- Route the failure through the launcher/configuration error code.
+
+Acceptance gate: no combination of flags starts the target having silently
+discarded a rule the caller asked for.
+
 ## Milestone 2: Strengthen compatibility and coverage
 
 - Upgrade to the current `go-landlock` release after reviewing its ABI changes.
@@ -91,6 +113,15 @@ enforced.
 - Add regression tests for the findings in the security review.
 - Replace network-dependent integration tests with local deterministic peers;
   keep optional external smoke tests separate.
+- Stop injecting `--best-effort` into every integration case. Gate the `--unix`
+  cases on ABI 9, run them strictly, and make them connect to a real socket in
+  both the allowed and the denied direction.
+- Make the integration suite fail loudly when the Landlock ABI probe cannot run,
+  instead of falling back to 0 and inverting the strict-ABI assertion.
+- Drop the suite's `go run` dependency once `landrun --probe` exists, so it can
+  run against a downloaded artifact without a Go toolchain.
+- Lint the security-relevant surfaces in CI: `shellcheck` on `test.sh` and
+  `actionlint` on the workflows.
 - Add race testing where it is compatible with the Landlock test harness.
 - Record kernel ABI and effective policy in CI output.
 
@@ -104,6 +135,9 @@ inferred from a single current kernel.
   implicitly in existing policy profiles.
 - Add policy-file support only after the CLI policy contract is stable.
 - Add audit-log guidance and diagnostics without requiring privileged access.
+- Document the `--ldd` support boundary in the README: Intel and ARM only, and
+  32-bit ARM objects carrying neither `EF_ARM_ABI_FLOAT_HARD` nor
+  `EF_ARM_ABI_FLOAT_SOFT` are rejected, per file across the dependency chain.
 
 Acceptance gate: every new access-right family has strict compatibility
 behavior, negative tests, and documented limitations.
