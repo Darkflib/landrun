@@ -10,6 +10,12 @@ It's lightweight, auditable, and wraps Landlock up to v9 features (file access, 
 
 [Binaries are not trustworthy](https://zoup.org/landrun-binaries-are-not-trustworthy/)
 
+> [!WARNING]
+> Landrun is a defense-in-depth tool, not a complete container or network
+> firewall. Review the [known security issues and limitations](docs/security-review.md)
+> before using it with hostile code. Remediation work is tracked in the
+> [hardening roadmap](ROADMAP.md).
+
 ## Features
 
 - 🔒 Kernel-level security using Landlock (up to ABI v9)
@@ -117,7 +123,7 @@ landrun [options] <command> [args...]
 - By default, no environment variables are passed to the sandboxed command. Use `--env` to explicitly pass environment variables
 - The `--best-effort` flag allows graceful degradation on older kernels that don't support all requested restrictions. Because the default target is Landlock ABI v9, you will usually want `--best-effort` unless you are on a very recent kernel
 - Paths can be specified either using multiple flags or as comma-separated values (e.g., `--ro /usr,/lib,/home`)
-- If no paths or network rules are specified and neither unrestricted flag is set, landrun will apply maximum restrictions (denying all access)
+- If no paths or network rules are specified and neither unrestricted flag is set, landrun applies the maximum restrictions supported by the selected Landlock ABI; operations outside Landlock's scope remain unaffected
 - By default, IPC scoping is restricted: the sandboxed process cannot connect to abstract UNIX sockets or send signals to processes outside its Landlock domain (ABI v6+). Use `--unrestricted-scoped` if this breaks your workload (e.g. some X11 or D-Bus setups)
 - On ABI v9+ kernels, connecting to pathname UNIX domain sockets created outside the sandbox (e.g. DNS/NSS via `nscd`, D-Bus, database sockets) is restricted. Grant access to specific sockets with `--unix <path>`
 
@@ -303,7 +309,7 @@ landrun uses Linux's Landlock to create a secure sandbox environment. It provide
 - Directory access restrictions
 - Execution control
 - TCP network restrictions
-- Process isolation
+- Limited IPC scoping for signals and UNIX sockets when supported by the kernel ABI
 - Default restrictive mode when no rules are specified
 
 Landlock is an access-control system that enables processes to securely restrict themselves and their future children. As a stackable Linux Security Module (LSM), it creates additional security layers on top of existing system-wide access controls, helping to mitigate security impacts from bugs or malicious behavior in applications.
@@ -346,8 +352,11 @@ These are restricted by default and can be relaxed with `--unrestricted-scoped`.
 - Landlock must be supported by your kernel
 - Network restrictions require Linux kernel 6.7 or later with Landlock ABI v4
 - TCP restrictions only apply to "classic" TCP sockets, not Multipath TCP. Since Go 1.24, `net.Listen` defaults to Multipath TCP and therefore cannot currently be restricted by Landlock (kernel bug [landlock-lsm/linux#54](https://github.com/landlock-lsm/linux/issues/54))
+- This version does not restrict UDP traffic
+- `--best-effort` may drop controls that the running kernel ABI does not support; it does not currently report the effective policy
+- `--ldd` may invoke `ldconfig` through the ambient `PATH` before confinement; do not use it with an untrusted environment or target until this is remediated
 - Some operations may require additional permissions
-- Files or directories opened before sandboxing are not subject to Landlock restrictions
+- Files, directories, and sockets opened before sandboxing are not subject to Landlock restrictions; landrun does not currently close inherited file descriptors
 
 ## Kernel Compatibility Table
 
