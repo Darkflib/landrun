@@ -282,6 +282,7 @@ func TestStandardLibDirs(t *testing.T) {
 		{name: "riscv32", class: elf.ELFCLASS32, machine: elf.EM_RISCV, data: elf.ELFDATA2LSB, needles: []string{"/lib/riscv32-linux-gnu"}},
 		{name: "ppc64el", class: elf.ELFCLASS64, machine: elf.EM_PPC64, data: elf.ELFDATA2LSB, needles: []string{"/lib/powerpc64le-linux-gnu"}, forbidden: "/lib/powerpc64-linux-gnu"},
 		{name: "ppc64", class: elf.ELFCLASS64, machine: elf.EM_PPC64, data: elf.ELFDATA2MSB, needles: []string{"/lib/powerpc64-linux-gnu"}, forbidden: "/lib/powerpc64le-linux-gnu"},
+		{name: "ppc32el", class: elf.ELFCLASS32, machine: elf.EM_PPC, data: elf.ELFDATA2LSB, needles: []string{"/lib/powerpcle-linux-gnu"}, forbidden: "/lib/powerpc-linux-gnu"},
 		{name: "ppc32", class: elf.ELFCLASS32, machine: elf.EM_PPC, data: elf.ELFDATA2MSB, needles: []string{"/lib/powerpc-linux-gnu"}, forbidden: "/lib/powerpc-linux-gnuspe"},
 		{name: "ppcspe", class: elf.ELFCLASS32, machine: elf.EM_PPC, data: elf.ELFDATA2MSB, flags: ppcEmbedded, needles: []string{"/lib/powerpc-linux-gnuspe"}, forbidden: "/lib/powerpc-linux-gnu"},
 		{name: "s390x", class: elf.ELFCLASS64, machine: elf.EM_S390, data: elf.ELFDATA2MSB, needles: []string{"/lib/s390x-linux-gnu"}},
