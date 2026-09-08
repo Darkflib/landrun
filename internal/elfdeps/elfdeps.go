@@ -142,19 +142,14 @@ func multiarchLibDirs(tuples ...string) []string {
 	return dirs
 }
 
-func readELFFlags(path string, f *elf.File) (uint32, error) {
+func readELFFlags(r io.ReaderAt, f *elf.File) (uint32, error) {
 	offset := int64(36)
 	if f.Class == elf.ELFCLASS64 {
 		offset = 48
 	}
 
 	raw := make([]byte, 4)
-	file, err := os.Open(path)
-	if err != nil {
-		return 0, err
-	}
-	defer file.Close()
-	if _, err := file.ReadAt(raw, offset); err != nil {
+	if _, err := r.ReadAt(raw, offset); err != nil {
 		return 0, err
 	}
 	return f.ByteOrder.Uint32(raw), nil
@@ -294,10 +289,15 @@ func GetLibraryDependencies(binary string) ([]string, error) {
 		}
 		processed[curr] = struct{}{}
 
-		f, err := elf.Open(curr)
+		file, err := os.Open(curr)
 		if err != nil {
 			// This can happen with non-ELF files in the dependency chain
 			// (e.g. ld.so.cache). Ignore them.
+			continue
+		}
+		f, err := elf.NewFile(file)
+		if err != nil {
+			_ = file.Close()
 			continue
 		}
 
@@ -310,15 +310,15 @@ func GetLibraryDependencies(binary string) ([]string, error) {
 		}
 
 		needed, rpaths := parseDynamic(f)
-		flags, err := readELFFlags(curr, f)
+		flags, err := readELFFlags(file, f)
 		if err != nil {
-			f.Close()
+			_ = file.Close()
 			return nil, fmt.Errorf("read ELF flags from %s: %w", curr, err)
 		}
 		origin := filepath.Dir(curr)
 		rpaths = normalizeRpaths(rpaths, origin)
 		libPaths, unresolved := resolveSonames(needed, rpaths, f.Class, f.Machine, f.Data, flags)
-		f.Close()
+		_ = file.Close()
 		if len(unresolved) > 0 {
 			return nil, fmt.Errorf("%s: unable to resolve shared libraries: %s", curr, strings.Join(unresolved, ", "))
 		}

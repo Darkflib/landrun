@@ -18,11 +18,16 @@ func TestParseAndResolveTrue(t *testing.T) {
 		t.Fatalf("failed to find 'true' binary: %v", err)
 	}
 
-	f, err := elf.Open(bin)
+	file, err := os.Open(bin)
 	if err != nil {
 		t.Fatalf("failed to open %s: %v", bin, err)
 	}
-	defer f.Close()
+	defer func() { _ = file.Close() }()
+
+	f, err := elf.NewFile(file)
+	if err != nil {
+		t.Fatalf("failed to parse %s: %v", bin, err)
+	}
 
 	interp := parseInterp(f)
 	if interp == "" {
@@ -36,7 +41,7 @@ func TestParseAndResolveTrue(t *testing.T) {
 
 	origin := filepath.Dir(bin)
 	rpaths = normalizeRpaths(rpaths, origin)
-	flags, err := readELFFlags(bin, f)
+	flags, err := readELFFlags(file, f)
 	if err != nil {
 		t.Fatalf("failed to read ELF flags from %s: %v", bin, err)
 	}
