@@ -6,9 +6,17 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       matrix:
         include:
@@ -30,11 +38,32 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Build
-        run: go build -v -o landrun ./cmd/landrun/main.go
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Build static binary
+        env:
+          CGO_ENABLED: "0"
+        run: go build -trimpath -o landrun ./cmd/landrun
+
+      - name: Verify static binary
+        run: |
+          binary_info="$(file ./landrun)"
+          echo "$binary_info"
+          grep -q "statically linked" <<<"$binary_info"
+
+      - name: Run offline integration tests against artifact
+        run: ./test.sh --no-build --keep-binary --offline
+
+      - name: Generate checksum
+        run: sha256sum landrun > landrun.sha256
 
       - name: Upload binary
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: landrun-linux-${{ matrix.arch }}
-          path: ./landrun
+          path: |
+            ./landrun
+            ./landrun.sha256
+          if-no-files-found: error
+          retention-days: 14
