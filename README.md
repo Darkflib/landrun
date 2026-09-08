@@ -125,7 +125,7 @@ landrun [options] <command> [args...]
 - Standard input, output, and error are inherited. All other open file descriptors are closed on `exec` unless explicitly listed with `--preserve-fd`
 - The `--best-effort` flag allows graceful degradation on older kernels that don't support all requested restrictions. Because the default target is Landlock ABI v9, you will usually want `--best-effort` unless you are on a very recent kernel
 - Paths can be specified either using multiple flags or as comma-separated values (e.g., `--ro /usr,/lib,/home`)
-- If no paths or network rules are specified and neither unrestricted flag is set, landrun applies the maximum restrictions supported by the selected Landlock ABI; operations outside Landlock's scope remain unaffected
+- If no paths or network rules are specified and neither `--unrestricted-filesystem` nor `--unrestricted-network` is set, landrun applies the maximum restrictions supported by the selected Landlock ABI; operations outside Landlock's scope remain unaffected
 - By default, IPC scoping is restricted: the sandboxed process cannot connect to abstract UNIX sockets or send signals to processes outside its Landlock domain (ABI v6+). Use `--unrestricted-scoped` if this breaks your workload (e.g. some X11 or D-Bus setups)
 - On ABI v9+ kernels, connecting to pathname UNIX domain sockets created outside the sandbox (e.g. DNS/NSS via `nscd`, D-Bus, database sockets) is restricted. Grant access to specific sockets with `--unix <path>`
 
@@ -322,7 +322,7 @@ landrun uses Linux's Landlock to create a secure sandbox environment. It provide
 - Directory access restrictions
 - Execution control
 - TCP network restrictions
-- Limited IPC scoping for signals and UNIX sockets when supported by the kernel ABI
+- Limited IPC scoping for signals and abstract UNIX sockets when supported by the kernel ABI
 - Default restrictive mode when no rules are specified
 
 Landlock is an access-control system that enables processes to securely restrict themselves and their future children. As a stackable Linux Security Module (LSM), it creates additional security layers on top of existing system-wide access controls, helping to mitigate security impacts from bugs or malicious behavior in applications.
@@ -436,7 +436,7 @@ When using `--best-effort` (disabled by default), landrun will gracefully degrad
 - On Linux 5.13-5.18: Basic filesystem restrictions without file reparenting, truncation control, or network restrictions
 - On older Linux: No restrictions (sandbox disabled)
 
-When no rules are specified and neither unrestricted flag is set, landrun will apply maximum restrictions available for the current kernel version.
+When no rules are specified and neither `--unrestricted-filesystem` nor `--unrestricted-network` is set, landrun will apply maximum restrictions available for the current kernel version.
 
 ### Tests
 
