@@ -10,10 +10,10 @@ import (
 	"strings"
 )
 
-// standardLibDirs returns library directories to search for the given ELF ABI,
-// including Debian/Ubuntu multiarch paths. Endianness matters for architectures
-// such as MIPS and PowerPC, where incompatible ABIs share an ELF machine value.
-func standardLibDirs(class elf.Class, machine elf.Machine, data elf.Data, flags uint32) []string {
+// standardLibDirs returns library directories for the supported Intel and ARM
+// ELF ABIs. Other architectures fail closed instead of guessing at ABI-specific
+// paths that this resolver cannot validate.
+func standardLibDirs(class elf.Class, machine elf.Machine, data elf.Data, flags uint32) ([]string, error) {
 	var dirs []string
 	switch {
 	case machine == elf.EM_X86_64 && class == elf.ELFCLASS64:
@@ -37,102 +37,23 @@ func standardLibDirs(class elf.Class, machine elf.Machine, data elf.Data, flags 
 	case machine == elf.EM_ARM:
 		if data == elf.ELFDATA2MSB {
 			dirs = multiarchLibDirs("armeb-linux-gnu")
+		} else if flags&armFloatHard != 0 && flags&armFloatSoft == 0 {
+			dirs = multiarchLibDirs("arm-linux-gnueabihf")
+		} else if flags&armFloatSoft != 0 && flags&armFloatHard == 0 {
+			dirs = multiarchLibDirs("arm-linux-gnueabi")
 		} else {
-			dirs = multiarchLibDirs("arm-linux-gnueabihf", "arm-linux-gnueabi")
+			return nil, fmt.Errorf("unsupported or ambiguous ARM floating-point ABI flags %#x", flags)
 		}
-	case machine == elf.EM_RISCV:
-		if class == elf.ELFCLASS64 {
-			dirs = append(multiarchLibDirs("riscv64-linux-gnu"), "/lib64", "/usr/lib64")
-		} else {
-			dirs = append(multiarchLibDirs("riscv32-linux-gnu"), "/lib32", "/usr/lib32")
-		}
-	case machine == elf.EM_PPC64:
-		tuple := "powerpc64-linux-gnu"
-		if data == elf.ELFDATA2LSB {
-			tuple = "powerpc64le-linux-gnu"
-		}
-		dirs = append(multiarchLibDirs(tuple), "/lib64", "/usr/lib64")
-	case machine == elf.EM_PPC:
-		if data == elf.ELFDATA2LSB {
-			dirs = multiarchLibDirs("powerpcle-linux-gnu")
-		} else if flags&ppcEmbedded != 0 {
-			dirs = multiarchLibDirs("powerpc-linux-gnuspe")
-		} else {
-			dirs = multiarchLibDirs("powerpc-linux-gnu")
-		}
-	case machine == elf.EM_S390:
-		if class == elf.ELFCLASS64 {
-			dirs = append(multiarchLibDirs("s390x-linux-gnu"), "/lib64", "/usr/lib64")
-		} else {
-			dirs = append(multiarchLibDirs("s390-linux-gnu"), "/lib32", "/usr/lib32")
-		}
-	case machine == elf.EM_IA_64:
-		dirs = append(multiarchLibDirs("ia64-linux-gnu"), "/lib64", "/usr/lib64")
-	case machine == elf.EM_SPARCV9:
-		dirs = append(multiarchLibDirs("sparc64-linux-gnu"), "/lib64", "/usr/lib64")
-	case machine == elf.EM_SPARC || machine == elf.EM_SPARC32PLUS:
-		dirs = append(multiarchLibDirs("sparc-linux-gnu"), "/lib32", "/usr/lib32")
-	case machine == elf.EM_MIPS:
-		dirs = multiarchLibDirs(mipsMultiarchTuple(class, data, flags))
-		if class == elf.ELFCLASS64 {
-			dirs = append(dirs, "/lib64", "/usr/lib64")
-		} else if flags&mipsABI2 != 0 {
-			dirs = append(dirs, "/lib32", "/usr/lib32")
-		}
+	default:
+		return nil, fmt.Errorf("unsupported ELF ABI: class=%s machine=%s data=%s", class, machine, data)
 	}
-	return append(dirs, "/lib", "/usr/lib", "/usr/local/lib")
+	return append(dirs, "/lib", "/usr/lib", "/usr/local/lib"), nil
 }
 
 const (
-	ppcEmbedded = 0x80000000
-
-	mipsABI2     = 0x00000020
-	mipsArchMask = 0xf0000000
-	mipsArch32R6 = 0x90000000
-	mipsArch64R6 = 0xa0000000
+	armFloatSoft = 0x00000200
+	armFloatHard = 0x00000400
 )
-
-func mipsMultiarchTuple(class elf.Class, data elf.Data, flags uint32) string {
-	littleEndian := data == elf.ELFDATA2LSB
-	r6 := flags&mipsArchMask == mipsArch32R6 || flags&mipsArchMask == mipsArch64R6
-
-	if class == elf.ELFCLASS64 {
-		if r6 && littleEndian {
-			return "mipsisa64r6el-linux-gnuabi64"
-		}
-		if r6 {
-			return "mipsisa64r6-linux-gnuabi64"
-		}
-		if littleEndian {
-			return "mips64el-linux-gnuabi64"
-		}
-		return "mips64-linux-gnuabi64"
-	}
-
-	if flags&mipsABI2 != 0 {
-		if r6 && littleEndian {
-			return "mipsisa64r6el-linux-gnuabin32"
-		}
-		if r6 {
-			return "mipsisa64r6-linux-gnuabin32"
-		}
-		if littleEndian {
-			return "mips64el-linux-gnuabin32"
-		}
-		return "mips64-linux-gnuabin32"
-	}
-
-	if r6 && littleEndian {
-		return "mipsisa32r6el-linux-gnu"
-	}
-	if r6 {
-		return "mipsisa32r6-linux-gnu"
-	}
-	if littleEndian {
-		return "mipsel-linux-gnu"
-	}
-	return "mips-linux-gnu"
-}
 
 func multiarchLibDirs(tuples ...string) []string {
 	dirs := make([]string, 0, len(tuples)*2)
@@ -248,9 +169,12 @@ func resolveSingleSoname(soname string, rpaths []string, stdDirs []string) strin
 // resolveSonames attempts to resolve sonames to absolute paths using rpaths,
 // then architecture-specific standard library directories. Unresolved names
 // are returned separately so callers can fail closed.
-func resolveSonames(needed []string, rpaths []string, class elf.Class, machine elf.Machine, data elf.Data, flags uint32) ([]string, []string) {
+func resolveSonames(needed []string, rpaths []string, class elf.Class, machine elf.Machine, data elf.Data, flags uint32) ([]string, []string, error) {
 	seen := map[string]struct{}{}
-	stdDirs := standardLibDirs(class, machine, data, flags)
+	stdDirs, err := standardLibDirs(class, machine, data, flags)
+	if err != nil {
+		return nil, nil, err
+	}
 	resolved := make([]string, 0, len(needed))
 	unresolved := make([]string, 0)
 
@@ -265,7 +189,7 @@ func resolveSonames(needed []string, rpaths []string, class elf.Class, machine e
 			unresolved = append(unresolved, soname)
 		}
 	}
-	return resolved, unresolved
+	return resolved, unresolved, nil
 }
 
 // GetLibraryDependencies returns a list of library paths that the given binary depends on
@@ -317,8 +241,11 @@ func GetLibraryDependencies(binary string) ([]string, error) {
 		}
 		origin := filepath.Dir(curr)
 		rpaths = normalizeRpaths(rpaths, origin)
-		libPaths, unresolved := resolveSonames(needed, rpaths, f.Class, f.Machine, f.Data, flags)
+		libPaths, unresolved, err := resolveSonames(needed, rpaths, f.Class, f.Machine, f.Data, flags)
 		_ = file.Close()
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", curr, err)
+		}
 		if len(unresolved) > 0 {
 			return nil, fmt.Errorf("%s: unable to resolve shared libraries: %s", curr, strings.Join(unresolved, ", "))
 		}

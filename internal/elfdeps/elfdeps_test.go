@@ -45,7 +45,10 @@ func TestParseAndResolveTrue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read ELF flags from %s: %v", bin, err)
 	}
-	paths, unresolved := resolveSonames(needed, rpaths, f.Class, f.Machine, f.Data, flags)
+	paths, unresolved, err := resolveSonames(needed, rpaths, f.Class, f.Machine, f.Data, flags)
+	if err != nil {
+		t.Fatalf("failed to resolve libraries for %s: %v", bin, err)
+	}
 	if len(unresolved) != 0 {
 		t.Fatalf("unresolved libraries for %s: %v", bin, unresolved)
 	}
@@ -236,7 +239,10 @@ func TestResolveSonamesOriginExpansion(t *testing.T) {
 
 	// rpath using $ORIGIN should resolve to tmpDir/lib
 	rpaths1 := normalizeRpaths([]string{"$ORIGIN/lib"}, tmpDir)
-	out, unresolved := resolveSonames([]string{libName}, rpaths1, elf.ELFCLASS64, elf.EM_X86_64, elf.ELFDATA2LSB, 0)
+	out, unresolved, err := resolveSonames([]string{libName}, rpaths1, elf.ELFCLASS64, elf.EM_X86_64, elf.ELFDATA2LSB, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(unresolved) != 0 {
 		t.Fatalf("unexpected unresolved libraries: %v", unresolved)
 	}
@@ -249,7 +255,10 @@ func TestResolveSonamesOriginExpansion(t *testing.T) {
 
 	// relative rpath should also resolve against origin
 	rpaths2 := normalizeRpaths([]string{"lib"}, tmpDir)
-	out2, unresolved := resolveSonames([]string{libName}, rpaths2, elf.ELFCLASS64, elf.EM_X86_64, elf.ELFDATA2LSB, 0)
+	out2, unresolved, err := resolveSonames([]string{libName}, rpaths2, elf.ELFCLASS64, elf.EM_X86_64, elf.ELFDATA2LSB, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(unresolved) != 0 {
 		t.Fatalf("unexpected unresolved libraries: %v", unresolved)
 	}
@@ -276,31 +285,16 @@ func TestStandardLibDirs(t *testing.T) {
 		{name: "i386", class: elf.ELFCLASS32, machine: elf.EM_386, data: elf.ELFDATA2LSB, needles: []string{"/lib/i386-linux-gnu"}},
 		{name: "arm64", class: elf.ELFCLASS64, machine: elf.EM_AARCH64, data: elf.ELFDATA2LSB, needles: []string{"/lib/aarch64-linux-gnu"}, forbidden: "/lib/aarch64_be-linux-gnu"},
 		{name: "arm64 big endian", class: elf.ELFCLASS64, machine: elf.EM_AARCH64, data: elf.ELFDATA2MSB, needles: []string{"/lib/aarch64_be-linux-gnu"}, forbidden: "/lib/aarch64-linux-gnu"},
-		{name: "armhf", class: elf.ELFCLASS32, machine: elf.EM_ARM, data: elf.ELFDATA2LSB, needles: []string{"/lib/arm-linux-gnueabihf"}},
+		{name: "armhf", class: elf.ELFCLASS32, machine: elf.EM_ARM, data: elf.ELFDATA2LSB, flags: armFloatHard, needles: []string{"/lib/arm-linux-gnueabihf"}, forbidden: "/lib/arm-linux-gnueabi"},
+		{name: "armel", class: elf.ELFCLASS32, machine: elf.EM_ARM, data: elf.ELFDATA2LSB, flags: armFloatSoft, needles: []string{"/lib/arm-linux-gnueabi"}, forbidden: "/lib/arm-linux-gnueabihf"},
 		{name: "armeb", class: elf.ELFCLASS32, machine: elf.EM_ARM, data: elf.ELFDATA2MSB, needles: []string{"/lib/armeb-linux-gnu"}, forbidden: "/lib/armeb-linux-gnueabi"},
-		{name: "riscv64", class: elf.ELFCLASS64, machine: elf.EM_RISCV, data: elf.ELFDATA2LSB, needles: []string{"/lib/riscv64-linux-gnu"}},
-		{name: "riscv32", class: elf.ELFCLASS32, machine: elf.EM_RISCV, data: elf.ELFDATA2LSB, needles: []string{"/lib/riscv32-linux-gnu"}},
-		{name: "ppc64el", class: elf.ELFCLASS64, machine: elf.EM_PPC64, data: elf.ELFDATA2LSB, needles: []string{"/lib/powerpc64le-linux-gnu"}, forbidden: "/lib/powerpc64-linux-gnu"},
-		{name: "ppc64", class: elf.ELFCLASS64, machine: elf.EM_PPC64, data: elf.ELFDATA2MSB, needles: []string{"/lib/powerpc64-linux-gnu"}, forbidden: "/lib/powerpc64le-linux-gnu"},
-		{name: "ppc32el", class: elf.ELFCLASS32, machine: elf.EM_PPC, data: elf.ELFDATA2LSB, needles: []string{"/lib/powerpcle-linux-gnu"}, forbidden: "/lib/powerpc-linux-gnu"},
-		{name: "ppc32", class: elf.ELFCLASS32, machine: elf.EM_PPC, data: elf.ELFDATA2MSB, needles: []string{"/lib/powerpc-linux-gnu"}, forbidden: "/lib/powerpc-linux-gnuspe"},
-		{name: "ppcspe", class: elf.ELFCLASS32, machine: elf.EM_PPC, data: elf.ELFDATA2MSB, flags: ppcEmbedded, needles: []string{"/lib/powerpc-linux-gnuspe"}, forbidden: "/lib/powerpc-linux-gnu"},
-		{name: "s390x", class: elf.ELFCLASS64, machine: elf.EM_S390, data: elf.ELFDATA2MSB, needles: []string{"/lib/s390x-linux-gnu"}},
-		{name: "s390", class: elf.ELFCLASS32, machine: elf.EM_S390, data: elf.ELFDATA2MSB, needles: []string{"/lib/s390-linux-gnu"}},
-		{name: "ia64", class: elf.ELFCLASS64, machine: elf.EM_IA_64, data: elf.ELFDATA2LSB, needles: []string{"/lib/ia64-linux-gnu"}},
-		{name: "sparc64", class: elf.ELFCLASS64, machine: elf.EM_SPARCV9, data: elf.ELFDATA2MSB, needles: []string{"/lib/sparc64-linux-gnu"}},
-		{name: "sparc32", class: elf.ELFCLASS32, machine: elf.EM_SPARC, data: elf.ELFDATA2MSB, needles: []string{"/lib/sparc-linux-gnu"}},
-		{name: "sparc32plus", class: elf.ELFCLASS32, machine: elf.EM_SPARC32PLUS, data: elf.ELFDATA2MSB, needles: []string{"/lib/sparc-linux-gnu"}},
-		{name: "mips64el", class: elf.ELFCLASS64, machine: elf.EM_MIPS, data: elf.ELFDATA2LSB, needles: []string{"/lib/mips64el-linux-gnuabi64"}, forbidden: "/lib/mips64-linux-gnuabi64"},
-		{name: "mips64", class: elf.ELFCLASS64, machine: elf.EM_MIPS, data: elf.ELFDATA2MSB, needles: []string{"/lib/mips64-linux-gnuabi64"}, forbidden: "/lib/mips64el-linux-gnuabi64"},
-		{name: "mipsel o32", class: elf.ELFCLASS32, machine: elf.EM_MIPS, data: elf.ELFDATA2LSB, needles: []string{"/lib/mipsel-linux-gnu"}, forbidden: "/lib/mips-linux-gnu"},
-		{name: "mips n32", class: elf.ELFCLASS32, machine: elf.EM_MIPS, data: elf.ELFDATA2MSB, flags: mipsABI2, needles: []string{"/lib/mips64-linux-gnuabin32"}, forbidden: "/lib/mips-linux-gnu"},
-		{name: "mips32r6el", class: elf.ELFCLASS32, machine: elf.EM_MIPS, data: elf.ELFDATA2LSB, flags: mipsArch32R6, needles: []string{"/lib/mipsisa32r6el-linux-gnu"}, forbidden: "/lib/mipsel-linux-gnu"},
-		{name: "mips64r6", class: elf.ELFCLASS64, machine: elf.EM_MIPS, data: elf.ELFDATA2MSB, flags: mipsArch64R6, needles: []string{"/lib/mipsisa64r6-linux-gnuabi64"}, forbidden: "/lib/mips64-linux-gnuabi64"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			dirs := standardLibDirs(tc.class, tc.machine, tc.data, tc.flags)
+			dirs, err := standardLibDirs(tc.class, tc.machine, tc.data, tc.flags)
+			if err != nil {
+				t.Fatal(err)
+			}
 			for _, needle := range tc.needles {
 				if !containsString(dirs, needle) {
 					t.Fatalf("missing %s in %v", needle, dirs)
@@ -316,12 +310,25 @@ func TestStandardLibDirs(t *testing.T) {
 	}
 }
 
-func TestMIPSO32DoesNotSearchN32Fallback(t *testing.T) {
-	dirs := standardLibDirs(elf.ELFCLASS32, elf.EM_MIPS, elf.ELFDATA2MSB, 0)
-	for _, forbidden := range []string{"/lib32", "/usr/lib32"} {
-		if containsString(dirs, forbidden) {
-			t.Fatalf("MIPS O32 lookup included N32 directory %s in %v", forbidden, dirs)
-		}
+func TestStandardLibDirsRejectsUnsupportedABIs(t *testing.T) {
+	cases := []struct {
+		name    string
+		class   elf.Class
+		machine elf.Machine
+		data    elf.Data
+		flags   uint32
+	}{
+		{name: "MIPS", class: elf.ELFCLASS64, machine: elf.EM_MIPS, data: elf.ELFDATA2LSB},
+		{name: "PowerPC", class: elf.ELFCLASS64, machine: elf.EM_PPC64, data: elf.ELFDATA2MSB},
+		{name: "ambiguous ARM float ABI", class: elf.ELFCLASS32, machine: elf.EM_ARM, data: elf.ELFDATA2LSB},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dirs, err := standardLibDirs(tc.class, tc.machine, tc.data, tc.flags)
+			if err == nil {
+				t.Fatalf("expected unsupported ABI error, got directories %v", dirs)
+			}
+		})
 	}
 }
 
