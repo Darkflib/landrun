@@ -10,51 +10,70 @@ import (
 	"strings"
 )
 
-// standardLibDirs returns library directories to search for the given ELF arch,
-// including Debian/Ubuntu multiarch paths.
-func standardLibDirs(class elf.Class, machine elf.Machine) []string {
+// standardLibDirs returns library directories for the supported Intel and ARM
+// ELF ABIs. Other architectures fail closed instead of guessing at ABI-specific
+// paths that this resolver cannot validate.
+func standardLibDirs(class elf.Class, machine elf.Machine, data elf.Data, flags uint32) ([]string, error) {
 	var dirs []string
 	switch {
-	case machine == elf.EM_X86_64 && class == elf.ELFCLASS64:
+	case machine == elf.EM_X86_64 && class == elf.ELFCLASS64 && data == elf.ELFDATA2LSB:
 		dirs = []string{
 			"/lib64", "/usr/lib64",
 			"/lib/x86_64-linux-gnu", "/usr/lib/x86_64-linux-gnu",
 		}
-	case machine == elf.EM_X86_64 && class == elf.ELFCLASS32: // x32
-		dirs = []string{"/libx32", "/usr/libx32"}
-	case machine == elf.EM_386:
+	case machine == elf.EM_X86_64 && class == elf.ELFCLASS32 && data == elf.ELFDATA2LSB: // x32
+		dirs = append(multiarchLibDirs("x86_64-linux-gnux32"), "/libx32", "/usr/libx32")
+	case machine == elf.EM_386 && class == elf.ELFCLASS32 && data == elf.ELFDATA2LSB:
 		dirs = []string{
 			"/lib32", "/usr/lib32",
 			"/lib/i386-linux-gnu", "/usr/lib/i386-linux-gnu",
 		}
-	case machine == elf.EM_AARCH64:
-		dirs = []string{
-			"/lib64", "/usr/lib64",
-			"/lib/aarch64-linux-gnu", "/usr/lib/aarch64-linux-gnu",
+	case machine == elf.EM_AARCH64 && class == elf.ELFCLASS64:
+		tuple := "aarch64-linux-gnu"
+		if data == elf.ELFDATA2MSB {
+			tuple = "aarch64_be-linux-gnu"
 		}
-	case machine == elf.EM_ARM:
-		dirs = []string{
-			"/lib/arm-linux-gnueabihf", "/usr/lib/arm-linux-gnueabihf",
-			"/lib/arm-linux-gnueabi", "/usr/lib/arm-linux-gnueabi",
+		dirs = append(multiarchLibDirs(tuple), "/lib64", "/usr/lib64")
+	case machine == elf.EM_ARM && class == elf.ELFCLASS32:
+		if data == elf.ELFDATA2MSB {
+			dirs = multiarchLibDirs("armeb-linux-gnu")
+		} else if flags&armFloatHard != 0 && flags&armFloatSoft == 0 {
+			dirs = multiarchLibDirs("arm-linux-gnueabihf")
+		} else if flags&armFloatSoft != 0 && flags&armFloatHard == 0 {
+			dirs = multiarchLibDirs("arm-linux-gnueabi")
+		} else {
+			return nil, fmt.Errorf("unsupported or ambiguous ARM floating-point ABI flags %#x", flags)
 		}
-	case machine == elf.EM_RISCV && class == elf.ELFCLASS64:
-		dirs = []string{
-			"/lib64", "/usr/lib64",
-			"/lib/riscv64-linux-gnu", "/usr/lib/riscv64-linux-gnu",
-		}
-	case machine == elf.EM_PPC64:
-		dirs = []string{
-			"/lib64", "/usr/lib64",
-			"/lib/powerpc64le-linux-gnu", "/usr/lib/powerpc64le-linux-gnu",
-			"/lib/powerpc64-linux-gnu", "/usr/lib/powerpc64-linux-gnu",
-		}
-	case machine == elf.EM_S390 && class == elf.ELFCLASS64:
-		dirs = []string{
-			"/lib64", "/usr/lib64",
-			"/lib/s390x-linux-gnu", "/usr/lib/s390x-linux-gnu",
-		}
+	default:
+		return nil, fmt.Errorf("unsupported ELF ABI: class=%s machine=%s data=%s", class, machine, data)
 	}
-	return append(dirs, "/lib", "/usr/lib", "/usr/local/lib")
+	return append(dirs, "/lib", "/usr/lib", "/usr/local/lib"), nil
+}
+
+const (
+	armFloatSoft = 0x00000200
+	armFloatHard = 0x00000400
+)
+
+func multiarchLibDirs(tuples ...string) []string {
+	dirs := make([]string, 0, len(tuples)*2)
+	for _, tuple := range tuples {
+		dirs = append(dirs, filepath.Join("/lib", tuple), filepath.Join("/usr/lib", tuple))
+	}
+	return dirs
+}
+
+func readELFFlags(r io.ReaderAt, f *elf.File) (uint32, error) {
+	offset := int64(36)
+	if f.Class == elf.ELFCLASS64 {
+		offset = 48
+	}
+
+	raw := make([]byte, 4)
+	if _, err := r.ReadAt(raw, offset); err != nil {
+		return 0, err
+	}
+	return f.ByteOrder.Uint32(raw), nil
 }
 
 // parseInterp extracts the PT_INTERP interpreter path from an ELF file.
@@ -150,9 +169,12 @@ func resolveSingleSoname(soname string, rpaths []string, stdDirs []string) strin
 // resolveSonames attempts to resolve sonames to absolute paths using rpaths,
 // then architecture-specific standard library directories. Unresolved names
 // are returned separately so callers can fail closed.
-func resolveSonames(needed []string, rpaths []string, class elf.Class, machine elf.Machine) ([]string, []string) {
+func resolveSonames(needed []string, rpaths []string, class elf.Class, machine elf.Machine, data elf.Data, flags uint32) ([]string, []string, error) {
 	seen := map[string]struct{}{}
-	stdDirs := standardLibDirs(class, machine)
+	stdDirs, err := standardLibDirs(class, machine, data, flags)
+	if err != nil {
+		return nil, nil, err
+	}
 	resolved := make([]string, 0, len(needed))
 	unresolved := make([]string, 0)
 
@@ -167,7 +189,7 @@ func resolveSonames(needed []string, rpaths []string, class elf.Class, machine e
 			unresolved = append(unresolved, soname)
 		}
 	}
-	return resolved, unresolved
+	return resolved, unresolved, nil
 }
 
 // GetLibraryDependencies returns a list of library paths that the given binary depends on
@@ -191,10 +213,15 @@ func GetLibraryDependencies(binary string) ([]string, error) {
 		}
 		processed[curr] = struct{}{}
 
-		f, err := elf.Open(curr)
+		file, err := os.Open(curr)
 		if err != nil {
 			// This can happen with non-ELF files in the dependency chain
 			// (e.g. ld.so.cache). Ignore them.
+			continue
+		}
+		f, err := elf.NewFile(file)
+		if err != nil {
+			_ = file.Close()
 			continue
 		}
 
@@ -207,10 +234,18 @@ func GetLibraryDependencies(binary string) ([]string, error) {
 		}
 
 		needed, rpaths := parseDynamic(f)
+		flags, err := readELFFlags(file, f)
+		if err != nil {
+			_ = file.Close()
+			return nil, fmt.Errorf("read ELF flags from %s: %w", curr, err)
+		}
 		origin := filepath.Dir(curr)
 		rpaths = normalizeRpaths(rpaths, origin)
-		libPaths, unresolved := resolveSonames(needed, rpaths, f.Class, f.Machine)
-		f.Close()
+		libPaths, unresolved, err := resolveSonames(needed, rpaths, f.Class, f.Machine, f.Data, flags)
+		_ = file.Close()
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", curr, err)
+		}
 		if len(unresolved) > 0 {
 			return nil, fmt.Errorf("%s: unable to resolve shared libraries: %s", curr, strings.Join(unresolved, ", "))
 		}

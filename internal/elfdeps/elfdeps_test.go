@@ -18,11 +18,16 @@ func TestParseAndResolveTrue(t *testing.T) {
 		t.Fatalf("failed to find 'true' binary: %v", err)
 	}
 
-	f, err := elf.Open(bin)
+	file, err := os.Open(bin)
 	if err != nil {
 		t.Fatalf("failed to open %s: %v", bin, err)
 	}
-	defer f.Close()
+	defer func() { _ = file.Close() }()
+
+	f, err := elf.NewFile(file)
+	if err != nil {
+		t.Fatalf("failed to parse %s: %v", bin, err)
+	}
 
 	interp := parseInterp(f)
 	if interp == "" {
@@ -36,7 +41,14 @@ func TestParseAndResolveTrue(t *testing.T) {
 
 	origin := filepath.Dir(bin)
 	rpaths = normalizeRpaths(rpaths, origin)
-	paths, unresolved := resolveSonames(needed, rpaths, f.Class, f.Machine)
+	flags, err := readELFFlags(file, f)
+	if err != nil {
+		t.Fatalf("failed to read ELF flags from %s: %v", bin, err)
+	}
+	paths, unresolved, err := resolveSonames(needed, rpaths, f.Class, f.Machine, f.Data, flags)
+	if err != nil {
+		t.Fatalf("failed to resolve libraries for %s: %v", bin, err)
+	}
 	if len(unresolved) != 0 {
 		t.Fatalf("unresolved libraries for %s: %v", bin, unresolved)
 	}
@@ -227,7 +239,10 @@ func TestResolveSonamesOriginExpansion(t *testing.T) {
 
 	// rpath using $ORIGIN should resolve to tmpDir/lib
 	rpaths1 := normalizeRpaths([]string{"$ORIGIN/lib"}, tmpDir)
-	out, unresolved := resolveSonames([]string{libName}, rpaths1, elf.ELFCLASS64, elf.EM_X86_64)
+	out, unresolved, err := resolveSonames([]string{libName}, rpaths1, elf.ELFCLASS64, elf.EM_X86_64, elf.ELFDATA2LSB, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(unresolved) != 0 {
 		t.Fatalf("unexpected unresolved libraries: %v", unresolved)
 	}
@@ -240,7 +255,10 @@ func TestResolveSonamesOriginExpansion(t *testing.T) {
 
 	// relative rpath should also resolve against origin
 	rpaths2 := normalizeRpaths([]string{"lib"}, tmpDir)
-	out2, unresolved := resolveSonames([]string{libName}, rpaths2, elf.ELFCLASS64, elf.EM_X86_64)
+	out2, unresolved, err := resolveSonames([]string{libName}, rpaths2, elf.ELFCLASS64, elf.EM_X86_64, elf.ELFDATA2LSB, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(unresolved) != 0 {
 		t.Fatalf("unexpected unresolved libraries: %v", unresolved)
 	}
@@ -254,42 +272,76 @@ func TestResolveSonamesOriginExpansion(t *testing.T) {
 
 func TestStandardLibDirs(t *testing.T) {
 	cases := []struct {
-		class   elf.Class
-		machine elf.Machine
-		needle  string
+		name      string
+		class     elf.Class
+		machine   elf.Machine
+		data      elf.Data
+		flags     uint32
+		needles   []string
+		forbidden string
 	}{
-		{elf.ELFCLASS64, elf.EM_X86_64, "/lib/x86_64-linux-gnu"},
-		{elf.ELFCLASS32, elf.EM_X86_64, "/libx32"},
-		{elf.ELFCLASS32, elf.EM_386, "/lib/i386-linux-gnu"},
-		{elf.ELFCLASS64, elf.EM_AARCH64, "/lib/aarch64-linux-gnu"},
-		{elf.ELFCLASS32, elf.EM_ARM, "/lib/arm-linux-gnueabihf"},
-		{elf.ELFCLASS64, elf.EM_RISCV, "/lib/riscv64-linux-gnu"},
-		{elf.ELFCLASS64, elf.EM_PPC64, "/lib/powerpc64le-linux-gnu"},
-		{elf.ELFCLASS64, elf.EM_S390, "/lib/s390x-linux-gnu"},
+		{name: "amd64", class: elf.ELFCLASS64, machine: elf.EM_X86_64, data: elf.ELFDATA2LSB, needles: []string{"/lib/x86_64-linux-gnu"}},
+		{name: "x32", class: elf.ELFCLASS32, machine: elf.EM_X86_64, data: elf.ELFDATA2LSB, needles: []string{"/libx32", "/lib/x86_64-linux-gnux32"}},
+		{name: "i386", class: elf.ELFCLASS32, machine: elf.EM_386, data: elf.ELFDATA2LSB, needles: []string{"/lib/i386-linux-gnu"}},
+		{name: "arm64", class: elf.ELFCLASS64, machine: elf.EM_AARCH64, data: elf.ELFDATA2LSB, needles: []string{"/lib/aarch64-linux-gnu"}, forbidden: "/lib/aarch64_be-linux-gnu"},
+		{name: "arm64 big endian", class: elf.ELFCLASS64, machine: elf.EM_AARCH64, data: elf.ELFDATA2MSB, needles: []string{"/lib/aarch64_be-linux-gnu"}, forbidden: "/lib/aarch64-linux-gnu"},
+		{name: "armhf", class: elf.ELFCLASS32, machine: elf.EM_ARM, data: elf.ELFDATA2LSB, flags: armFloatHard, needles: []string{"/lib/arm-linux-gnueabihf"}, forbidden: "/lib/arm-linux-gnueabi"},
+		{name: "armel", class: elf.ELFCLASS32, machine: elf.EM_ARM, data: elf.ELFDATA2LSB, flags: armFloatSoft, needles: []string{"/lib/arm-linux-gnueabi"}, forbidden: "/lib/arm-linux-gnueabihf"},
+		{name: "armeb", class: elf.ELFCLASS32, machine: elf.EM_ARM, data: elf.ELFDATA2MSB, needles: []string{"/lib/armeb-linux-gnu"}, forbidden: "/lib/armeb-linux-gnueabi"},
 	}
 	for _, tc := range cases {
-		dirs := standardLibDirs(tc.class, tc.machine)
-		found := false
-		for _, d := range dirs {
-			if d == tc.needle {
-				found = true
-				break
+		t.Run(tc.name, func(t *testing.T) {
+			dirs, err := standardLibDirs(tc.class, tc.machine, tc.data, tc.flags)
+			if err != nil {
+				t.Fatal(err)
 			}
-		}
-		if !found {
-			t.Fatalf("standardLibDirs(%v,%v) missing %s in %v", tc.class, tc.machine, tc.needle, dirs)
-		}
-		// Always includes generic fallbacks.
-		hasLib := false
-		for _, d := range dirs {
-			if d == "/lib" {
-				hasLib = true
+			for _, needle := range tc.needles {
+				if !containsString(dirs, needle) {
+					t.Fatalf("missing %s in %v", needle, dirs)
+				}
 			}
-		}
-		if !hasLib {
-			t.Fatalf("expected /lib fallback in %v", dirs)
+			if tc.forbidden != "" && containsString(dirs, tc.forbidden) {
+				t.Fatalf("included incompatible directory %s in %v", tc.forbidden, dirs)
+			}
+			if !containsString(dirs, "/lib") {
+				t.Fatalf("expected /lib fallback in %v", dirs)
+			}
+		})
+	}
+}
+
+func TestStandardLibDirsRejectsUnsupportedABIs(t *testing.T) {
+	cases := []struct {
+		name    string
+		class   elf.Class
+		machine elf.Machine
+		data    elf.Data
+		flags   uint32
+	}{
+		{name: "MIPS", class: elf.ELFCLASS64, machine: elf.EM_MIPS, data: elf.ELFDATA2LSB},
+		{name: "PowerPC", class: elf.ELFCLASS64, machine: elf.EM_PPC64, data: elf.ELFDATA2MSB},
+		{name: "ambiguous ARM float ABI", class: elf.ELFCLASS32, machine: elf.EM_ARM, data: elf.ELFDATA2LSB},
+		{name: "big-endian x86", class: elf.ELFCLASS64, machine: elf.EM_X86_64, data: elf.ELFDATA2MSB},
+		{name: "64-bit i386", class: elf.ELFCLASS64, machine: elf.EM_386, data: elf.ELFDATA2LSB},
+		{name: "32-bit AArch64", class: elf.ELFCLASS32, machine: elf.EM_AARCH64, data: elf.ELFDATA2LSB},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dirs, err := standardLibDirs(tc.class, tc.machine, tc.data, tc.flags)
+			if err == nil {
+				t.Fatalf("expected unsupported ABI error, got directories %v", dirs)
+			}
+		})
+	}
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
 		}
 	}
+	return false
 }
 
 func TestNormalizeRpathsOriginBraceAndEmpty(t *testing.T) {
