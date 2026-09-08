@@ -55,7 +55,9 @@ Severity: High impact with an attacker-controlled `PATH` entry.
 
 Status: Remediated. Dependency discovery no longer invokes `ldconfig` or any
 other helper. Libraries that cannot be resolved from the ELF search paths and
-architecture-specific standard directories now cause the launch to fail.
+architecture-specific standard directories now cause the launch to fail. The
+standard-directory lookup accounts for ELF class and endianness across the
+documented multiarch targets.
 
 The ELF dependency parser is non-executing, but its cache fallback invokes
 `exec.Command("ldconfig", "-p")`. This lookup uses the launcher's ambient

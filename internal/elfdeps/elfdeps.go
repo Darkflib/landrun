@@ -10,9 +10,10 @@ import (
 	"strings"
 )
 
-// standardLibDirs returns library directories to search for the given ELF arch,
-// including Debian/Ubuntu multiarch paths.
-func standardLibDirs(class elf.Class, machine elf.Machine) []string {
+// standardLibDirs returns library directories to search for the given ELF ABI,
+// including Debian/Ubuntu multiarch paths. Endianness matters for architectures
+// such as MIPS and PowerPC, where incompatible ABIs share an ELF machine value.
+func standardLibDirs(class elf.Class, machine elf.Machine, data elf.Data, flags uint32) []string {
 	var dirs []string
 	switch {
 	case machine == elf.EM_X86_64 && class == elf.ELFCLASS64:
@@ -21,40 +22,138 @@ func standardLibDirs(class elf.Class, machine elf.Machine) []string {
 			"/lib/x86_64-linux-gnu", "/usr/lib/x86_64-linux-gnu",
 		}
 	case machine == elf.EM_X86_64 && class == elf.ELFCLASS32: // x32
-		dirs = []string{"/libx32", "/usr/libx32"}
+		dirs = append(multiarchLibDirs("x86_64-linux-gnux32"), "/libx32", "/usr/libx32")
 	case machine == elf.EM_386:
 		dirs = []string{
 			"/lib32", "/usr/lib32",
 			"/lib/i386-linux-gnu", "/usr/lib/i386-linux-gnu",
 		}
 	case machine == elf.EM_AARCH64:
-		dirs = []string{
-			"/lib64", "/usr/lib64",
-			"/lib/aarch64-linux-gnu", "/usr/lib/aarch64-linux-gnu",
+		tuple := "aarch64-linux-gnu"
+		if data == elf.ELFDATA2MSB {
+			tuple = "aarch64_be-linux-gnu"
 		}
+		dirs = append(multiarchLibDirs(tuple), "/lib64", "/usr/lib64")
 	case machine == elf.EM_ARM:
-		dirs = []string{
-			"/lib/arm-linux-gnueabihf", "/usr/lib/arm-linux-gnueabihf",
-			"/lib/arm-linux-gnueabi", "/usr/lib/arm-linux-gnueabi",
+		if data == elf.ELFDATA2MSB {
+			dirs = multiarchLibDirs("armeb-linux-gnueabihf", "armeb-linux-gnueabi")
+		} else {
+			dirs = multiarchLibDirs("arm-linux-gnueabihf", "arm-linux-gnueabi")
 		}
-	case machine == elf.EM_RISCV && class == elf.ELFCLASS64:
-		dirs = []string{
-			"/lib64", "/usr/lib64",
-			"/lib/riscv64-linux-gnu", "/usr/lib/riscv64-linux-gnu",
+	case machine == elf.EM_RISCV:
+		if class == elf.ELFCLASS64 {
+			dirs = append(multiarchLibDirs("riscv64-linux-gnu"), "/lib64", "/usr/lib64")
+		} else {
+			dirs = append(multiarchLibDirs("riscv32-linux-gnu"), "/lib32", "/usr/lib32")
 		}
 	case machine == elf.EM_PPC64:
-		dirs = []string{
-			"/lib64", "/usr/lib64",
-			"/lib/powerpc64le-linux-gnu", "/usr/lib/powerpc64le-linux-gnu",
-			"/lib/powerpc64-linux-gnu", "/usr/lib/powerpc64-linux-gnu",
+		tuple := "powerpc64-linux-gnu"
+		if data == elf.ELFDATA2LSB {
+			tuple = "powerpc64le-linux-gnu"
 		}
-	case machine == elf.EM_S390 && class == elf.ELFCLASS64:
-		dirs = []string{
-			"/lib64", "/usr/lib64",
-			"/lib/s390x-linux-gnu", "/usr/lib/s390x-linux-gnu",
+		dirs = append(multiarchLibDirs(tuple), "/lib64", "/usr/lib64")
+	case machine == elf.EM_PPC:
+		if data == elf.ELFDATA2LSB {
+			dirs = multiarchLibDirs("powerpcle-linux-gnu")
+		} else {
+			dirs = multiarchLibDirs("powerpc-linux-gnu", "powerpc-linux-gnuspe")
+		}
+	case machine == elf.EM_S390:
+		if class == elf.ELFCLASS64 {
+			dirs = append(multiarchLibDirs("s390x-linux-gnu"), "/lib64", "/usr/lib64")
+		} else {
+			dirs = append(multiarchLibDirs("s390-linux-gnu"), "/lib32", "/usr/lib32")
+		}
+	case machine == elf.EM_IA_64:
+		dirs = append(multiarchLibDirs("ia64-linux-gnu"), "/lib64", "/usr/lib64")
+	case machine == elf.EM_SPARCV9:
+		dirs = append(multiarchLibDirs("sparc64-linux-gnu"), "/lib64", "/usr/lib64")
+	case machine == elf.EM_SPARC:
+		dirs = append(multiarchLibDirs("sparc-linux-gnu"), "/lib32", "/usr/lib32")
+	case machine == elf.EM_MIPS:
+		dirs = multiarchLibDirs(mipsMultiarchTuple(class, data, flags))
+		if class == elf.ELFCLASS64 {
+			dirs = append(dirs, "/lib64", "/usr/lib64")
+		} else {
+			dirs = append(dirs, "/lib32", "/usr/lib32")
 		}
 	}
 	return append(dirs, "/lib", "/usr/lib", "/usr/local/lib")
+}
+
+const (
+	mipsABI2     = 0x00000020
+	mipsArchMask = 0xf0000000
+	mipsArch32R6 = 0x90000000
+	mipsArch64R6 = 0xa0000000
+)
+
+func mipsMultiarchTuple(class elf.Class, data elf.Data, flags uint32) string {
+	littleEndian := data == elf.ELFDATA2LSB
+	r6 := flags&mipsArchMask == mipsArch32R6 || flags&mipsArchMask == mipsArch64R6
+
+	if class == elf.ELFCLASS64 {
+		if r6 && littleEndian {
+			return "mipsisa64r6el-linux-gnuabi64"
+		}
+		if r6 {
+			return "mipsisa64r6-linux-gnuabi64"
+		}
+		if littleEndian {
+			return "mips64el-linux-gnuabi64"
+		}
+		return "mips64-linux-gnuabi64"
+	}
+
+	if flags&mipsABI2 != 0 {
+		if r6 && littleEndian {
+			return "mipsisa64r6el-linux-gnuabin32"
+		}
+		if r6 {
+			return "mipsisa64r6-linux-gnuabin32"
+		}
+		if littleEndian {
+			return "mips64el-linux-gnuabin32"
+		}
+		return "mips64-linux-gnuabin32"
+	}
+
+	if r6 && littleEndian {
+		return "mipsisa32r6el-linux-gnu"
+	}
+	if r6 {
+		return "mipsisa32r6-linux-gnu"
+	}
+	if littleEndian {
+		return "mipsel-linux-gnu"
+	}
+	return "mips-linux-gnu"
+}
+
+func multiarchLibDirs(tuples ...string) []string {
+	dirs := make([]string, 0, len(tuples)*2)
+	for _, tuple := range tuples {
+		dirs = append(dirs, filepath.Join("/lib", tuple), filepath.Join("/usr/lib", tuple))
+	}
+	return dirs
+}
+
+func readELFFlags(path string, f *elf.File) (uint32, error) {
+	offset := int64(36)
+	if f.Class == elf.ELFCLASS64 {
+		offset = 48
+	}
+
+	raw := make([]byte, 4)
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+	if _, err := file.ReadAt(raw, offset); err != nil {
+		return 0, err
+	}
+	return f.ByteOrder.Uint32(raw), nil
 }
 
 // parseInterp extracts the PT_INTERP interpreter path from an ELF file.
@@ -150,9 +249,9 @@ func resolveSingleSoname(soname string, rpaths []string, stdDirs []string) strin
 // resolveSonames attempts to resolve sonames to absolute paths using rpaths,
 // then architecture-specific standard library directories. Unresolved names
 // are returned separately so callers can fail closed.
-func resolveSonames(needed []string, rpaths []string, class elf.Class, machine elf.Machine) ([]string, []string) {
+func resolveSonames(needed []string, rpaths []string, class elf.Class, machine elf.Machine, data elf.Data, flags uint32) ([]string, []string) {
 	seen := map[string]struct{}{}
-	stdDirs := standardLibDirs(class, machine)
+	stdDirs := standardLibDirs(class, machine, data, flags)
 	resolved := make([]string, 0, len(needed))
 	unresolved := make([]string, 0)
 
@@ -207,9 +306,14 @@ func GetLibraryDependencies(binary string) ([]string, error) {
 		}
 
 		needed, rpaths := parseDynamic(f)
+		flags, err := readELFFlags(curr, f)
+		if err != nil {
+			f.Close()
+			return nil, fmt.Errorf("read ELF flags from %s: %w", curr, err)
+		}
 		origin := filepath.Dir(curr)
 		rpaths = normalizeRpaths(rpaths, origin)
-		libPaths, unresolved := resolveSonames(needed, rpaths, f.Class, f.Machine)
+		libPaths, unresolved := resolveSonames(needed, rpaths, f.Class, f.Machine, f.Data, flags)
 		f.Close()
 		if len(unresolved) > 0 {
 			return nil, fmt.Errorf("%s: unable to resolve shared libraries: %s", curr, strings.Join(unresolved, ", "))

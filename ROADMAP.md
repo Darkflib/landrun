@@ -44,6 +44,8 @@ Target: next security-focused release.
   policy creation and `exec`.
 - [x] Add hostile-`PATH`, unresolved-SONAME, and executable-replacement regression
   tests.
+- [x] Preserve standard multiarch lookup across supported ELF architectures
+  without reintroducing a helper process.
 
 Acceptance gate: `--ldd` performs no `execve` before Landlock enforcement.
 
