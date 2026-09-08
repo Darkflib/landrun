@@ -16,25 +16,25 @@ import (
 func standardLibDirs(class elf.Class, machine elf.Machine, data elf.Data, flags uint32) ([]string, error) {
 	var dirs []string
 	switch {
-	case machine == elf.EM_X86_64 && class == elf.ELFCLASS64:
+	case machine == elf.EM_X86_64 && class == elf.ELFCLASS64 && data == elf.ELFDATA2LSB:
 		dirs = []string{
 			"/lib64", "/usr/lib64",
 			"/lib/x86_64-linux-gnu", "/usr/lib/x86_64-linux-gnu",
 		}
-	case machine == elf.EM_X86_64 && class == elf.ELFCLASS32: // x32
+	case machine == elf.EM_X86_64 && class == elf.ELFCLASS32 && data == elf.ELFDATA2LSB: // x32
 		dirs = append(multiarchLibDirs("x86_64-linux-gnux32"), "/libx32", "/usr/libx32")
-	case machine == elf.EM_386:
+	case machine == elf.EM_386 && class == elf.ELFCLASS32 && data == elf.ELFDATA2LSB:
 		dirs = []string{
 			"/lib32", "/usr/lib32",
 			"/lib/i386-linux-gnu", "/usr/lib/i386-linux-gnu",
 		}
-	case machine == elf.EM_AARCH64:
+	case machine == elf.EM_AARCH64 && class == elf.ELFCLASS64:
 		tuple := "aarch64-linux-gnu"
 		if data == elf.ELFDATA2MSB {
 			tuple = "aarch64_be-linux-gnu"
 		}
 		dirs = append(multiarchLibDirs(tuple), "/lib64", "/usr/lib64")
-	case machine == elf.EM_ARM:
+	case machine == elf.EM_ARM && class == elf.ELFCLASS32:
 		if data == elf.ELFDATA2MSB {
 			dirs = multiarchLibDirs("armeb-linux-gnu")
 		} else if flags&armFloatHard != 0 && flags&armFloatSoft == 0 {

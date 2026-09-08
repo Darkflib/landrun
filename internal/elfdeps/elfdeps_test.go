@@ -321,6 +321,9 @@ func TestStandardLibDirsRejectsUnsupportedABIs(t *testing.T) {
 		{name: "MIPS", class: elf.ELFCLASS64, machine: elf.EM_MIPS, data: elf.ELFDATA2LSB},
 		{name: "PowerPC", class: elf.ELFCLASS64, machine: elf.EM_PPC64, data: elf.ELFDATA2MSB},
 		{name: "ambiguous ARM float ABI", class: elf.ELFCLASS32, machine: elf.EM_ARM, data: elf.ELFDATA2LSB},
+		{name: "big-endian x86", class: elf.ELFCLASS64, machine: elf.EM_X86_64, data: elf.ELFDATA2MSB},
+		{name: "64-bit i386", class: elf.ELFCLASS64, machine: elf.EM_386, data: elf.ELFDATA2LSB},
+		{name: "32-bit AArch64", class: elf.ELFCLASS32, machine: elf.EM_AARCH64, data: elf.ELFDATA2LSB},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
