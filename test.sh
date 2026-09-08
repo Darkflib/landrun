@@ -84,6 +84,25 @@ RW_DIR_NESTED_EXEC="$RW_DIR/rw_nested_exec"
 EXEC_DIR="$TEST_DIR/exec"
 NESTED_DIR="$TEST_DIR/nested/path/deep"
 
+# Build a portable allowlist for the system library roots present on this
+# runner. Ubuntu's amd64 image has /lib64 while its arm64 image does not.
+# /usr is granted separately by the individual test cases.
+SYSTEM_LIB_DIRS=""
+for system_lib_dir in /lib /lib64; do
+    if [ -e "$system_lib_dir" ]; then
+        if [ -z "$SYSTEM_LIB_DIRS" ]; then
+            SYSTEM_LIB_DIRS="$system_lib_dir"
+        else
+            SYSTEM_LIB_DIRS="$SYSTEM_LIB_DIRS,$system_lib_dir"
+        fi
+    fi
+done
+
+if [ -z "$SYSTEM_LIB_DIRS" ]; then
+    print_error "No supported system library directory found"
+    exit 1
+fi
+
 print_status "Setting up test environment..."
 rm -rf "$TEST_DIR"
 mkdir -p "$RO_DIR" "$RW_DIR" "$EXEC_DIR" "$NESTED_DIR" "$RO_DIR_NESTED_RO" "$RO_DIR_NESTED_RW" "$RO_DIR_NESTED_EXEC" "$RW_DIR_NESTED_RO" "$RW_DIR_NESTED_RW" "$RW_DIR_NESTED_EXEC"
@@ -177,44 +196,44 @@ print_status "Starting test cases..."
 
 # Basic access tests
 run_test "Read-only access to file" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR -- cat $RO_DIR/test.txt" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- cat $RO_DIR/test.txt" \
     0
 
 run_test "Read-only access to nested file" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR -- cat $RO_DIR_NESTED_RO/test.txt" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- cat $RO_DIR_NESTED_RO/test.txt" \
     0
 
 run_test "Write access to nested directory writable nested in read-only directory" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR --rw $RO_DIR_NESTED_RW -- touch $RO_DIR_NESTED_RW/created_file" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --rw $RO_DIR_NESTED_RW -- touch $RO_DIR_NESTED_RW/created_file" \
     0
 
 run_test "Write access to nested file writable nested in read-only directory" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR --rw $RO_DIR_NESTED_RW/created_file -- touch $RO_DIR_NESTED_RW/created_file" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --rw $RO_DIR_NESTED_RW/created_file -- touch $RO_DIR_NESTED_RW/created_file" \
     0
 
 run_test "Read-write access to file" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR --rw $RW_DIR touch $RW_DIR/new.txt" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --rw $RW_DIR touch $RW_DIR/new.txt" \
     0
 
 run_test "No write access to read-only directory" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR --rw $RW_DIR touch $RO_DIR/new.txt" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --rw $RW_DIR touch $RO_DIR/new.txt" \
     1
 
 # Executable permission tests
 run_test "Execute access with rox flag" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --rox $EXEC_DIR -- $EXEC_DIR/test.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR -- $EXEC_DIR/test.sh" \
     0
 
 run_test "Execute access with rox flag on file" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --rox $EXEC_DIR/test.sh -- $EXEC_DIR/test.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR/test.sh -- $EXEC_DIR/test.sh" \
     0
 
 run_test "Execute access with rox flag on a file that is executable in same directory that one is allowed" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --rox $EXEC_DIR/test.sh -- $EXEC_DIR/test2.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR/test.sh -- $EXEC_DIR/test2.sh" \
     1
 
 run_test "Execute a file with --add-exec flag" \
-    "./landrun --log-level debug --add-exec --rox /usr --ro /lib --ro /lib64 --rox $EXEC_DIR/test.sh -- $EXEC_DIR/test2.sh" \
+    "./landrun --log-level debug --add-exec --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR/test.sh -- $EXEC_DIR/test2.sh" \
     0
 
 run_test "Execute a file with --add-exec and --ldd flag" \
@@ -223,15 +242,15 @@ run_test "Execute a file with --add-exec and --ldd flag" \
 
 
 run_test "No execute access with just ro flag" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --ro $EXEC_DIR -- $EXEC_DIR/test.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $EXEC_DIR -- $EXEC_DIR/test.sh" \
     1
 
 run_test "Execute access in read-write directory" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --rwx $RW_DIR -- $RW_DIR/rw_script.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rwx $RW_DIR -- $RW_DIR/rw_script.sh" \
     0
 
 run_test "No execute access in read-write directory without rwx" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --rw $RW_DIR -- $RW_DIR/rw_script.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rw $RW_DIR -- $RW_DIR/rw_script.sh" \
     1
 
 # Directory traversal tests
@@ -245,11 +264,11 @@ run_test "Deep directory traversal" \
 
 # Multiple paths and complex specifications
 run_test "Multiple read paths" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR --ro $NESTED_DIR -- cat $NESTED_DIR/test.txt" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --ro $NESTED_DIR -- cat $NESTED_DIR/test.txt" \
     0
 
 run_test "Comma-separated paths" \
-    "./landrun --log-level debug --rox /usr --ro /lib,/lib64,$RO_DIR -- cat $RO_DIR/test.txt" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS,$RO_DIR -- cat $RO_DIR/test.txt" \
     0
 
 # System command tests
@@ -263,7 +282,7 @@ run_test "System command with arguments" \
 
 # Edge cases
 run_test "Non-existent read-only path" \
-    "./landrun --log-level debug --ro /usr --ro /lib --ro /lib64 --ro /nonexistent/path -- ls" \
+    "./landrun --log-level debug --ro /usr --ro $SYSTEM_LIB_DIRS --ro /nonexistent/path -- ls" \
     1
 
 run_test "No configuration" \
@@ -308,7 +327,7 @@ run_test "Passing custom environment variable" \
 
 # Combining different permission types
 run_test "Mixed permissions" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --rox $EXEC_DIR --rwx $RW_DIR --env PATH -- bash -c '$EXEC_DIR/test.sh > $RW_DIR/output.txt && cat $RW_DIR/output.txt'" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR --rwx $RW_DIR --env PATH -- bash -c '$EXEC_DIR/test.sh > $RW_DIR/output.txt && cat $RW_DIR/output.txt'" \
     0
 
 # Specific regression tests for bugs we fixed
@@ -338,19 +357,19 @@ $INTERNET_ACCESS && run_test "Restricted network access" \
 
 # New feature tests (Landlock V6-V9 / go-landlock v0.9.0)
 run_test "Ignore missing path with --ignore-missing" \
-    "./landrun --log-level debug --ignore-missing --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR --ro /nonexistent/path -- cat $RO_DIR/test.txt" \
+    "./landrun --log-level debug --ignore-missing --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --ro /nonexistent/path -- cat $RO_DIR/test.txt" \
     0
 
 run_test "Missing path without --ignore-missing still fails" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --ro /nonexistent/path -- cat $RO_DIR/test.txt" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro /nonexistent/path -- cat $RO_DIR/test.txt" \
     1
 
 run_test "Unrestricted IPC scoping smoke test" \
-    "./landrun --log-level debug --unrestricted-scoped --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR -- cat $RO_DIR/test.txt" \
+    "./landrun --log-level debug --unrestricted-scoped --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- cat $RO_DIR/test.txt" \
     0
 
 run_test "UNIX socket path allowed with --unix" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR --unix $RO_DIR/test.txt -- cat $RO_DIR/test.txt" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --unix $RO_DIR/test.txt -- cat $RO_DIR/test.txt" \
     0
 
 # --- CLI / startup edge cases ---
@@ -367,7 +386,7 @@ run_test "Missing env key is omitted" \
     0
 
 run_test "LANDRUN_LOG_LEVEL env smoke" \
-    "LANDRUN_LOG_LEVEL=debug ./landrun --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR -- cat $RO_DIR/test.txt" \
+    "LANDRUN_LOG_LEVEL=debug ./landrun --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- cat $RO_DIR/test.txt" \
     0
 
 # --- Filesystem edge cases ---
@@ -376,31 +395,31 @@ cp "$RW_DIR/rw_script.sh" "$RW_DIR/rwx_file.sh"
 chmod +x "$RW_DIR/rwx_file.sh"
 
 run_test "rwx on a single file allows execution" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --rwx $RW_DIR/rwx_file.sh -- $RW_DIR/rwx_file.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rwx $RW_DIR/rwx_file.sh -- $RW_DIR/rwx_file.sh" \
     0
 
 run_test "Overwrite of read-only file is denied" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR -- bash -c 'echo overwrite > $RO_DIR/test.txt'" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- bash -c 'echo overwrite > $RO_DIR/test.txt'" \
     1
 
 run_test "Truncate of read-only file is denied" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR -- bash -c ': > $RO_DIR/test.txt'" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- bash -c ': > $RO_DIR/test.txt'" \
     1
 
 run_test "Delete file under rw is allowed" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --rw $RW_DIR --env PATH -- bash -c 'echo delme > $RW_DIR/todelete.txt && rm $RW_DIR/todelete.txt'" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rw $RW_DIR --env PATH -- bash -c 'echo delme > $RW_DIR/todelete.txt && rm $RW_DIR/todelete.txt'" \
     0
 
 run_test "Delete file under ro is denied" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR --env PATH -- rm $RO_DIR/test.txt" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --env PATH -- rm $RO_DIR/test.txt" \
     1
 
 run_test "Execute from nested exec dir under ro parent" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --rox $RO_DIR_NESTED_EXEC -- $RO_DIR_NESTED_EXEC/test.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rox $RO_DIR_NESTED_EXEC -- $RO_DIR_NESTED_EXEC/test.sh" \
     0
 
 run_test "Execute denied from nested exec dir with only ro parent" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR -- $RO_DIR_NESTED_EXEC/test.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- $RO_DIR_NESTED_EXEC/test.sh" \
     1
 
 run_test "ldd without add-exec still resolves libraries for true" \
@@ -523,27 +542,27 @@ run_test "unix paths ignored when filesystem unrestricted" \
     0
 
 run_test "FS restricted with net and scoped unrestricted" \
-    "./landrun --log-level debug --unrestricted-network --unrestricted-scoped --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR -- cat $RO_DIR/test.txt" \
+    "./landrun --log-level debug --unrestricted-network --unrestricted-scoped --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- cat $RO_DIR/test.txt" \
     0
 
 # --- V6-V9 flag smokes ---
 run_test "Audit log flags smoke with best-effort" \
-    "./landrun --log-level debug --log-disable-originating --log-enable-subprocesses --log-disable-subdomains --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR -- cat $RO_DIR/test.txt" \
+    "./landrun --log-level debug --log-disable-originating --log-enable-subprocesses --log-disable-subdomains --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- cat $RO_DIR/test.txt" \
     0
 
 run_test "unix on a directory path" \
-    "./landrun --log-level debug --rox /usr --ro /lib --ro /lib64 --ro $RO_DIR --unix $RO_DIR -- cat $RO_DIR/test.txt" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --unix $RO_DIR -- cat $RO_DIR/test.txt" \
     0
 
 # --- Strict mode (no --best-effort) ---
 if [ "$LANDLOCK_ABI" -lt 9 ] 2>/dev/null; then
     run_test_strict "Strict V9 fails on ABI < 9 kernels" \
-        "./landrun --log-level error --rox /usr --ro /lib --ro /lib64 -- true" \
+        "./landrun --log-level error --rox /usr --ro $SYSTEM_LIB_DIRS -- true" \
         1
 else
     print_status "Skipping strict-V9 failure test (kernel ABI >= 9)"
     run_test_strict "Strict V9 succeeds on ABI >= 9 kernels" \
-        "./landrun --log-level error --rox /usr --ro /lib --ro /lib64 --add-exec --ldd -- true" \
+        "./landrun --log-level error --rox /usr --ro $SYSTEM_LIB_DIRS --add-exec --ldd -- true" \
         0
 fi
 
