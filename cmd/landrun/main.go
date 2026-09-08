@@ -68,6 +68,10 @@ func main() {
 				Name:  "env",
 				Usage: "Environment variables to pass to the sandboxed command (KEY=VALUE or just KEY to pass current value)",
 			},
+			&cli.IntSliceFlag{
+				Name:  "preserve-fd",
+				Usage: "Preserve this already-open file descriptor (3 or greater) across exec",
+			},
 			&cli.BoolFlag{
 				Name:  "unrestricted-filesystem",
 				Usage: "Allow unrestricted filesystem access",
@@ -181,6 +185,9 @@ func main() {
 
 			if err := sandbox.Apply(cfg); err != nil {
 				log.Fatal("Failed to apply sandbox: %v", err)
+			}
+			if err := exec.PrepareInheritedDescriptors(c.IntSlice("preserve-fd")); err != nil {
+				log.Fatal("Failed to prepare inherited descriptors: %v", err)
 			}
 
 			return exec.Run(binary, args, envVars)

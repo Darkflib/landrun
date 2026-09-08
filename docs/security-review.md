@@ -22,6 +22,10 @@ seccomp filtering, resource limits, or destination-address filtering.
 
 Severity: High for a general-purpose sandbox launcher.
 
+Status: Remediated. Descriptors 3 and above are marked close-on-exec by
+default. `--preserve-fd` provides an explicit, validated opt-in for descriptor
+passing; standard input, output, and error remain inherited.
+
 `internal/exec.Run` calls `syscall.Exec` without closing or marking inherited
 file descriptors close-on-exec. Landlock does not retroactively restrict files
 opened before the policy was enforced. A process can therefore read or modify a
@@ -160,7 +164,6 @@ module reproducibility checks, or vulnerability scan.
 Landrun can still provide useful defense in depth when its limitations match the
 threat model:
 
-- Start it from a parent that does not expose unintended file descriptors.
 - Use only validated literal port values.
 - Do not assume `--best-effort` enforced options unavailable to the host ABI.
 - Do not treat the TCP allowlist as a complete network firewall.

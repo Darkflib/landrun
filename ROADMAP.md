@@ -49,10 +49,10 @@ Acceptance gate: `--ldd` performs no `execve` before Landlock enforcement.
 
 ### Define inherited-descriptor behavior
 
-- Default descriptors 3 and above to close-on-exec.
-- Add an explicit `--preserve-fd` option if descriptor passing is required.
-- Document standard streams and preserved descriptors as capabilities.
-- Test regular-file, directory, listening-socket, and connected-socket cases.
+- [x] Default descriptors 3 and above to close-on-exec.
+- [x] Add an explicit `--preserve-fd` option if descriptor passing is required.
+- [x] Document standard streams and preserved descriptors as capabilities.
+- [x] Test regular-file, directory, listening-socket, and connected-socket cases.
 
 Acceptance gate: an unlisted inherited descriptor cannot reach the target
 process.

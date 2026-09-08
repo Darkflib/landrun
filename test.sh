@@ -240,6 +240,22 @@ run_test "Execute a file with --add-exec and --ldd flag" \
     "./landrun --log-level debug --add-exec --ldd -- $(which true)" \
     0
 
+run_test "Inherited descriptor is closed by default" \
+    "./landrun --log-level debug --unrestricted-filesystem --unrestricted-network --unrestricted-scoped -- /bin/sh -c '[ ! -e /proc/self/fd/9 ]' 9<$RO_DIR/test.txt" \
+    0
+
+run_test "Explicitly preserved descriptor survives exec" \
+    "./landrun --log-level debug --unrestricted-filesystem --unrestricted-network --unrestricted-scoped --preserve-fd 9 -- /bin/sh -c '[ -e /proc/self/fd/9 ]' 9<$RO_DIR/test.txt" \
+    0
+
+run_test "Closed descriptor cannot be preserved" \
+    "./landrun --log-level error --unrestricted-filesystem --unrestricted-network --unrestricted-scoped --preserve-fd 999999 -- true" \
+    1
+
+run_test "Standard descriptor cannot be listed as preserved" \
+    "./landrun --log-level error --unrestricted-filesystem --unrestricted-network --unrestricted-scoped --preserve-fd 2 -- true" \
+    1
+
 
 run_test "No execute access with just ro flag" \
     "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $EXEC_DIR -- $EXEC_DIR/test.sh" \

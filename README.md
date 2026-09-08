@@ -102,6 +102,7 @@ landrun [options] <command> [args...]
 - `--bind-tcp <port>`: Allow binding to specified TCP port (can be specified multiple times or as comma-separated values)
 - `--connect-tcp <port>`: Allow connecting to specified TCP port (can be specified multiple times or as comma-separated values)
 - `--env <var>`: Environment variable to pass to the sandboxed command (format: KEY=VALUE or just KEY to pass current value)
+- `--preserve-fd <fd>`: Preserve an already-open file descriptor numbered 3 or greater across `exec` (can be specified multiple times or as comma-separated values)
 - `--best-effort`: Use best effort mode, falling back to less restrictive sandbox if necessary [default: disabled]
 - `--log-level <level>`: Set logging level (error, info, debug) [default: "error"]
 - `--unrestricted-network`: Allows unrestricted network access (disables all network restrictions)
@@ -121,6 +122,7 @@ landrun [options] <command> [args...]
 - Use `--rwx` for directories or files where you need both write access and the ability to execute files
 - Network restrictions require Linux kernel 6.7 or later with Landlock ABI v4
 - By default, no environment variables are passed to the sandboxed command. Use `--env` to explicitly pass environment variables
+- Standard input, output, and error are inherited. All other open file descriptors are closed on `exec` unless explicitly listed with `--preserve-fd`
 - The `--best-effort` flag allows graceful degradation on older kernels that don't support all requested restrictions. Because the default target is Landlock ABI v9, you will usually want `--best-effort` unless you are on a very recent kernel
 - Paths can be specified either using multiple flags or as comma-separated values (e.g., `--ro /usr,/lib,/home`)
 - If no paths or network rules are specified and neither unrestricted flag is set, landrun applies the maximum restrictions supported by the selected Landlock ABI; operations outside Landlock's scope remain unaffected
@@ -248,6 +250,17 @@ landrun --best-effort --ignore-missing --rox /usr --ro /etc,/opt/optional-config
 landrun --best-effort --unrestricted-scoped --rox /usr --ro /etc -- some-gui-app
 ```
 
+19. Intentionally pass an already-open descriptor to the command:
+
+```bash
+landrun --best-effort --add-exec --ldd --preserve-fd 3 -- \
+    /bin/sh -c 'IFS= read -r line <&3; printf "%s\n" "$line"' 3<./input.txt
+```
+
+Descriptors are capabilities: a preserved file, directory, or socket remains
+usable even when its path or network peer would otherwise be denied by the
+Landlock policy.
+
 ## Systemd Integration
 
 landrun can be integrated with systemd to run services with enhanced security. Here's an example of running nginx with landrun:
@@ -356,7 +369,7 @@ These are restricted by default and can be relaxed with `--unrestricted-scoped`.
 - `--best-effort` may drop controls that the running kernel ABI does not support; it does not currently report the effective policy
 - `--ldd` resolves dependencies without executing `ldconfig` or another helper; it fails closed if a library is only discoverable through a non-standard loader-cache entry
 - Some operations may require additional permissions
-- Files, directories, and sockets opened before sandboxing are not subject to Landlock restrictions; landrun does not currently close inherited file descriptors
+- Files, directories, and sockets intentionally preserved with `--preserve-fd` are not retroactively restricted by Landlock
 
 ## Kernel Compatibility Table
 
