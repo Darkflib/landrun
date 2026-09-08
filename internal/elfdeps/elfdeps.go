@@ -2,90 +2,13 @@ package elfdeps
 
 import (
 	"debug/elf"
+	"fmt"
 	"io"
 	"os"
-	osexec "os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
-
-// ldconfigRunner runs `ldconfig -p` and returns its output. Tests may override
-// this variable to inject fake output. It is unexported on purpose to allow
-// test injection within the package.
-var ldconfigRunner = func() ([]byte, error) {
-	return osexec.Command("ldconfig", "-p").Output()
-}
-
-// knownMachineTags are architecture qualifiers that appear in `ldconfig -p`
-// output (e.g. "libc.so.6 (libc6,x86-64) => ...").
-var knownMachineTags = []string{
-	"x86-64",
-	"x32",
-	"AArch64",
-	"ARM",
-	"IA-64",
-	"PPC64",
-	"PPC",
-	"RISCV64",
-	"RISCV32",
-	"S390X",
-	"S390",
-	"SPARC64",
-	"SPARC",
-	"MIPS64",
-	"MIPS",
-}
-
-type ldEntry struct {
-	path string
-	info string // parenthetical flags from ldconfig, e.g. "libc6,x86-64"
-}
-
-// ldconfigMachineTag returns the ldconfig arch qualifier that should be
-// preferred when resolving libraries for the given ELF class/machine.
-// An empty string means "no machine qualifier" (typical for i386).
-func ldconfigMachineTag(class elf.Class, machine elf.Machine) string {
-	switch machine {
-	case elf.EM_X86_64:
-		if class == elf.ELFCLASS32 {
-			return "x32"
-		}
-		return "x86-64"
-	case elf.EM_AARCH64:
-		return "AArch64"
-	case elf.EM_ARM:
-		return "ARM"
-	case elf.EM_386:
-		return ""
-	case elf.EM_PPC64:
-		return "PPC64"
-	case elf.EM_PPC:
-		return "PPC"
-	case elf.EM_RISCV:
-		if class == elf.ELFCLASS64 {
-			return "RISCV64"
-		}
-		return "RISCV32"
-	case elf.EM_S390:
-		if class == elf.ELFCLASS64 {
-			return "S390X"
-		}
-		return "S390"
-	case elf.EM_IA_64:
-		return "IA-64"
-	case elf.EM_SPARCV9:
-		return "SPARC64"
-	case elf.EM_SPARC:
-		return "SPARC"
-	case elf.EM_MIPS:
-		if class == elf.ELFCLASS64 {
-			return "MIPS64"
-		}
-		return "MIPS"
-	default:
-		return ""
-	}
-}
 
 // standardLibDirs returns library directories to search for the given ELF arch,
 // including Debian/Ubuntu multiarch paths.
@@ -132,101 +55,6 @@ func standardLibDirs(class elf.Class, machine elf.Machine) []string {
 		}
 	}
 	return append(dirs, "/lib", "/usr/lib", "/usr/local/lib")
-}
-
-func hasKnownMachineTag(info string) bool {
-	for _, tag := range knownMachineTags {
-		if tokenInInfo(info, tag) {
-			return true
-		}
-	}
-	return false
-}
-
-func tokenInInfo(info, token string) bool {
-	if token == "" || info == "" {
-		return false
-	}
-	for _, part := range strings.Split(info, ",") {
-		if strings.TrimSpace(part) == token {
-			return true
-		}
-	}
-	return false
-}
-
-func pickLdEntry(entries []ldEntry, preferredTag string) string {
-	if len(entries) == 0 {
-		return ""
-	}
-	if preferredTag != "" {
-		for _, e := range entries {
-			if tokenInInfo(e.info, preferredTag) {
-				return e.path
-			}
-		}
-	} else {
-		// Prefer entries without a machine qualifier (e.g. plain i386 "(libc6)").
-		for _, e := range entries {
-			if !hasKnownMachineTag(e.info) {
-				return e.path
-			}
-		}
-	}
-	// Fall back only when there is a single candidate, to avoid picking a
-	// library for the wrong architecture when several exist.
-	if len(entries) == 1 {
-		return entries[0].path
-	}
-	return ""
-}
-
-// getLdmap runs `ldconfig -p` and returns a map of soname -> path, preferring
-// entries that match preferredTag (from ldconfigMachineTag).
-func getLdmap(preferredTag string) map[string]string {
-	m := map[string]string{}
-	out, err := ldconfigRunner()
-	if err != nil {
-		return m
-	}
-
-	bySoname := map[string][]ldEntry{}
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
-		if !strings.Contains(line, "=>") {
-			continue
-		}
-		parts := strings.Split(line, "=>")
-		if len(parts) < 2 {
-			continue
-		}
-		path := strings.TrimSpace(parts[len(parts)-1])
-		left := strings.TrimSpace(parts[0])
-		toks := strings.Fields(left)
-		if len(toks) == 0 {
-			continue
-		}
-		soname := toks[0]
-		if path == "" || soname == "" {
-			continue
-		}
-		info := ""
-		if i := strings.Index(left, "("); i >= 0 {
-			if j := strings.Index(left[i:], ")"); j >= 0 {
-				info = strings.TrimSpace(left[i+1 : i+j])
-			}
-		}
-		if _, err := os.Stat(path); err == nil {
-			bySoname[soname] = append(bySoname[soname], ldEntry{path: path, info: info})
-		}
-	}
-
-	for soname, entries := range bySoname {
-		if p := pickLdEntry(entries, preferredTag); p != "" {
-			m[soname] = p
-		}
-	}
-	return m
 }
 
 // parseInterp extracts the PT_INTERP interpreter path from an ELF file.
@@ -295,10 +123,11 @@ func normalizeRpaths(rpaths []string, origin string) []string {
 	return out
 }
 
-// resolveSingleSoname attempts to resolve a single soname using rpaths,
-// standard dirs and ldconfig fallback. It takes a pointer to ldmap so the
-// caller can lazily populate and reuse it.
-func resolveSingleSoname(soname string, rpaths []string, stdDirs []string, preferredTag string, ldmap *map[string]string) string {
+// resolveSingleSoname attempts to resolve a single soname using rpaths and
+// architecture-specific standard library directories. It deliberately does
+// not invoke ldconfig: dependency discovery happens before Landlock is applied
+// and must never execute code selected through the ambient environment.
+func resolveSingleSoname(soname string, rpaths []string, stdDirs []string) string {
 	// check rpaths first
 	for _, rp := range rpaths {
 		candidate := filepath.Join(rp, soname)
@@ -315,39 +144,30 @@ func resolveSingleSoname(soname string, rpaths []string, stdDirs []string, prefe
 		}
 	}
 
-	// fallback: consult parsed ldconfig map (populate lazily)
-	if *ldmap == nil {
-		*ldmap = getLdmap(preferredTag)
-	}
-	if p, ok := (*ldmap)[soname]; ok {
-		return p
-	}
-
 	return ""
 }
 
 // resolveSonames attempts to resolve sonames to absolute paths using rpaths,
-// standard library directories and falling back to parsing `ldconfig -p` output.
-func resolveSonames(needed []string, rpaths []string, class elf.Class, machine elf.Machine) []string {
-	resolved := map[string]string{}
+// then architecture-specific standard library directories. Unresolved names
+// are returned separately so callers can fail closed.
+func resolveSonames(needed []string, rpaths []string, class elf.Class, machine elf.Machine) ([]string, []string) {
+	seen := map[string]struct{}{}
 	stdDirs := standardLibDirs(class, machine)
-	preferredTag := ldconfigMachineTag(class, machine)
-	var ldmap map[string]string
+	resolved := make([]string, 0, len(needed))
+	unresolved := make([]string, 0)
 
 	for _, soname := range needed {
-		if _, ok := resolved[soname]; ok {
+		if _, ok := seen[soname]; ok {
 			continue
 		}
-		resolved[soname] = resolveSingleSoname(soname, rpaths, stdDirs, preferredTag, &ldmap)
-	}
-
-	out := []string{}
-	for _, r := range resolved {
-		if r != "" {
-			out = append(out, r)
+		seen[soname] = struct{}{}
+		if path := resolveSingleSoname(soname, rpaths, stdDirs); path != "" {
+			resolved = append(resolved, path)
+		} else {
+			unresolved = append(unresolved, soname)
 		}
 	}
-	return out
+	return resolved, unresolved
 }
 
 // GetLibraryDependencies returns a list of library paths that the given binary depends on
@@ -389,8 +209,11 @@ func GetLibraryDependencies(binary string) ([]string, error) {
 		needed, rpaths := parseDynamic(f)
 		origin := filepath.Dir(curr)
 		rpaths = normalizeRpaths(rpaths, origin)
-		libPaths := resolveSonames(needed, rpaths, f.Class, f.Machine)
+		libPaths, unresolved := resolveSonames(needed, rpaths, f.Class, f.Machine)
 		f.Close()
+		if len(unresolved) > 0 {
+			return nil, fmt.Errorf("%s: unable to resolve shared libraries: %s", curr, strings.Join(unresolved, ", "))
+		}
 
 		for _, p := range libPaths {
 			if _, ok := finalMap[p]; !ok {
@@ -404,6 +227,7 @@ func GetLibraryDependencies(binary string) ([]string, error) {
 	for p := range finalMap {
 		out = append(out, p)
 	}
+	sort.Strings(out)
 
 	return out, nil
 }

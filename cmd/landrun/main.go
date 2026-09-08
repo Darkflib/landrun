@@ -183,7 +183,7 @@ func main() {
 				log.Fatal("Failed to apply sandbox: %v", err)
 			}
 
-			return exec.Run(args, envVars)
+			return exec.Run(binary, args, envVars)
 		},
 	}
 

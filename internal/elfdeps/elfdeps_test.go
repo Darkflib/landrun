@@ -1,3 +1,5 @@
+//go:build linux
+
 package elfdeps
 
 import (
@@ -34,7 +36,10 @@ func TestParseAndResolveTrue(t *testing.T) {
 
 	origin := filepath.Dir(bin)
 	rpaths = normalizeRpaths(rpaths, origin)
-	paths := resolveSonames(needed, rpaths, f.Class, f.Machine)
+	paths, unresolved := resolveSonames(needed, rpaths, f.Class, f.Machine)
+	if len(unresolved) != 0 {
+		t.Fatalf("unresolved libraries for %s: %v", bin, unresolved)
+	}
 	if paths == nil {
 		paths = []string{}
 	}
@@ -119,6 +124,49 @@ func TestRecursiveDependencies(t *testing.T) {
 	}
 }
 
+func TestUnresolvedDependencyDoesNotExecuteLdconfigFromPath(t *testing.T) {
+	if _, err := exec.LookPath("gcc"); err != nil {
+		t.Skip("gcc not found, skipping test")
+	}
+
+	tempDir := t.TempDir()
+	libPath := filepath.Join(tempDir, "libhostile.so")
+	cmd := exec.Command("gcc", "-fPIC", "-shared", "-o", libPath, "testdata/liba.c")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to compile test library: %v\n%s", err, string(out))
+	}
+
+	testBin := filepath.Join(tempDir, "needs-hostile-library")
+	cmd = exec.Command("gcc", "-o", testBin, "testdata/maina.c", "-L"+tempDir, "-lhostile")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to compile test binary: %v\n%s", err, string(out))
+	}
+	if err := os.Remove(libPath); err != nil {
+		t.Fatalf("failed to remove test library: %v", err)
+	}
+
+	fakeBinDir := filepath.Join(tempDir, "fake-bin")
+	if err := os.Mkdir(fakeBinDir, 0o755); err != nil {
+		t.Fatalf("failed to create fake bin directory: %v", err)
+	}
+	marker := filepath.Join(tempDir, "ldconfig-ran")
+	fakeLdconfig := filepath.Join(fakeBinDir, "ldconfig")
+	script := "#!/bin/sh\n: > \"$LANDRUN_LDCONFIG_MARKER\"\n"
+	if err := os.WriteFile(fakeLdconfig, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed to create fake ldconfig: %v", err)
+	}
+	t.Setenv("LANDRUN_LDCONFIG_MARKER", marker)
+	t.Setenv("PATH", fakeBinDir)
+
+	_, err := GetLibraryDependencies(testBin)
+	if err == nil || !strings.Contains(err.Error(), "libhostile.so") {
+		t.Fatalf("expected unresolved libhostile.so error, got %v", err)
+	}
+	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+		t.Fatalf("dependency discovery executed ambient ldconfig; marker stat error: %v", statErr)
+	}
+}
+
 func TestGetLibraryDependencies(t *testing.T) {
 	bin, err := exec.LookPath("true")
 	if err != nil {
@@ -161,94 +209,6 @@ func TestGetLibraryDependencies(t *testing.T) {
 	}
 }
 
-func TestGetLdmapWithFakeOutput(t *testing.T) {
-	// fake ldconfig output with a single mapping
-	original := ldconfigRunner
-	defer func() { ldconfigRunner = original }()
-
-	// create a fake file on disk to satisfy os.Stat checks in getLdmap
-	tmpDir := t.TempDir()
-	tmp := filepath.Join(tmpDir, "libfake.so")
-	f, err := os.Create(tmp)
-	if err != nil {
-		t.Fatalf("failed to create tmp file: %v", err)
-	}
-	f.Close()
-
-	// Because getLdmap checks the path exists, return tmp in the fake output
-	ldconfigRunner = func() ([]byte, error) {
-		return []byte("libfake.so (libc6,x86-64) => " + tmp + "\n"), nil
-	}
-
-	m := getLdmap("x86-64")
-	if got, ok := m["libfake.so"]; !ok {
-		t.Fatalf("expected libfake.so in map")
-	} else if got != tmp {
-		t.Fatalf("expected path %s, got %s", tmp, got)
-	}
-}
-
-func TestGetLdmapPrefersMatchingArch(t *testing.T) {
-	original := ldconfigRunner
-	defer func() { ldconfigRunner = original }()
-
-	tmpDir := t.TempDir()
-	x32Path := filepath.Join(tmpDir, "libc-x32.so.6")
-	x64Path := filepath.Join(tmpDir, "libc-x64.so.6")
-	for _, p := range []string{x32Path, x64Path} {
-		f, err := os.Create(p)
-		if err != nil {
-			t.Fatalf("failed to create %s: %v", p, err)
-		}
-		f.Close()
-	}
-
-	// x32 listed first — the old bug picked this for every arch.
-	ldconfigRunner = func() ([]byte, error) {
-		return []byte(
-			"libc.so.6 (libc6,x32) => " + x32Path + "\n" +
-				"libc.so.6 (libc6,x86-64) => " + x64Path + "\n",
-		), nil
-	}
-
-	m := getLdmap("x86-64")
-	if got := m["libc.so.6"]; got != x64Path {
-		t.Fatalf("expected x86-64 libc %s, got %s", x64Path, got)
-	}
-
-	m = getLdmap("x32")
-	if got := m["libc.so.6"]; got != x32Path {
-		t.Fatalf("expected x32 libc %s, got %s", x32Path, got)
-	}
-}
-
-func TestResolveSonamesUsesLdmapFallback(t *testing.T) {
-	original := ldconfigRunner
-	defer func() { ldconfigRunner = original }()
-
-	tmpDir := t.TempDir()
-	tmp := filepath.Join(tmpDir, "libfake2.so")
-	f, err := os.Create(tmp)
-	if err != nil {
-		t.Fatalf("failed to create tmp file: %v", err)
-	}
-	f.Close()
-
-	ldconfigRunner = func() ([]byte, error) {
-		return []byte("libfake2.so (libc6,x86-64) => " + tmp + "\n"), nil
-	}
-
-	// needed contains a soname that won't be found in rpaths or std dirs
-	rpaths := normalizeRpaths([]string{}, tmpDir)
-	out := resolveSonames([]string{"libfake2.so"}, rpaths, elf.ELFCLASS64, elf.EM_X86_64)
-	if len(out) != 1 {
-		t.Fatalf("expected 1 resolved path, got %d", len(out))
-	}
-	if out[0] != tmp {
-		t.Fatalf("expected %s, got %s", tmp, out[0])
-	}
-}
-
 func TestResolveSonamesOriginExpansion(t *testing.T) {
 	// Create a temp dir and a lib subdir to simulate $ORIGIN/lib
 	tmpDir := t.TempDir()
@@ -267,7 +227,10 @@ func TestResolveSonamesOriginExpansion(t *testing.T) {
 
 	// rpath using $ORIGIN should resolve to tmpDir/lib
 	rpaths1 := normalizeRpaths([]string{"$ORIGIN/lib"}, tmpDir)
-	out := resolveSonames([]string{libName}, rpaths1, elf.ELFCLASS64, elf.EM_X86_64)
+	out, unresolved := resolveSonames([]string{libName}, rpaths1, elf.ELFCLASS64, elf.EM_X86_64)
+	if len(unresolved) != 0 {
+		t.Fatalf("unexpected unresolved libraries: %v", unresolved)
+	}
 	if len(out) != 1 {
 		t.Fatalf("expected 1 resolved path for $ORIGIN, got %d", len(out))
 	}
@@ -277,44 +240,15 @@ func TestResolveSonamesOriginExpansion(t *testing.T) {
 
 	// relative rpath should also resolve against origin
 	rpaths2 := normalizeRpaths([]string{"lib"}, tmpDir)
-	out2 := resolveSonames([]string{libName}, rpaths2, elf.ELFCLASS64, elf.EM_X86_64)
+	out2, unresolved := resolveSonames([]string{libName}, rpaths2, elf.ELFCLASS64, elf.EM_X86_64)
+	if len(unresolved) != 0 {
+		t.Fatalf("unexpected unresolved libraries: %v", unresolved)
+	}
 	if len(out2) != 1 {
 		t.Fatalf("expected 1 resolved path for relative rpath, got %d", len(out2))
 	}
 	if out2[0] != libPath {
 		t.Fatalf("expected %s, got %s", libPath, out2[0])
-	}
-}
-
-func TestLdconfigMachineTag(t *testing.T) {
-	tests := []struct {
-		class   elf.Class
-		machine elf.Machine
-		want    string
-	}{
-		{elf.ELFCLASS64, elf.EM_X86_64, "x86-64"},
-		{elf.ELFCLASS32, elf.EM_X86_64, "x32"},
-		{elf.ELFCLASS64, elf.EM_AARCH64, "AArch64"},
-		{elf.ELFCLASS32, elf.EM_ARM, "ARM"},
-		{elf.ELFCLASS32, elf.EM_386, ""},
-		{elf.ELFCLASS64, elf.EM_PPC64, "PPC64"},
-		{elf.ELFCLASS32, elf.EM_PPC, "PPC"},
-		{elf.ELFCLASS64, elf.EM_RISCV, "RISCV64"},
-		{elf.ELFCLASS32, elf.EM_RISCV, "RISCV32"},
-		{elf.ELFCLASS64, elf.EM_S390, "S390X"},
-		{elf.ELFCLASS32, elf.EM_S390, "S390"},
-		{elf.ELFCLASS64, elf.EM_IA_64, "IA-64"},
-		{elf.ELFCLASS64, elf.EM_SPARCV9, "SPARC64"},
-		{elf.ELFCLASS32, elf.EM_SPARC, "SPARC"},
-		{elf.ELFCLASS64, elf.EM_MIPS, "MIPS64"},
-		{elf.ELFCLASS32, elf.EM_MIPS, "MIPS"},
-		{elf.ELFCLASS64, elf.EM_NONE, ""},
-	}
-	for _, tc := range tests {
-		got := ldconfigMachineTag(tc.class, tc.machine)
-		if got != tc.want {
-			t.Fatalf("ldconfigMachineTag(%v,%v)=%q want %q", tc.class, tc.machine, got, tc.want)
-		}
 	}
 }
 
@@ -358,61 +292,6 @@ func TestStandardLibDirs(t *testing.T) {
 	}
 }
 
-func TestTokenInInfoAndHasKnownMachineTag(t *testing.T) {
-	if !tokenInInfo("libc6,x86-64", "x86-64") {
-		t.Fatal("expected token match")
-	}
-	if tokenInInfo("libc6,x86-64", "x32") {
-		t.Fatal("unexpected token match")
-	}
-	if tokenInInfo("", "x86-64") {
-		t.Fatal("empty info should not match")
-	}
-	if tokenInInfo("libc6", "") {
-		t.Fatal("empty token should not match")
-	}
-	if !hasKnownMachineTag("libc6,x86-64") {
-		t.Fatal("expected known machine tag")
-	}
-	if hasKnownMachineTag("libc6") {
-		t.Fatal("plain libc6 should not have known machine tag")
-	}
-}
-
-func TestPickLdEntry(t *testing.T) {
-	if pickLdEntry(nil, "x86-64") != "" {
-		t.Fatal("empty entries should return empty")
-	}
-
-	entries := []ldEntry{
-		{path: "/lib/x32.so", info: "libc6,x32"},
-		{path: "/lib/x64.so", info: "libc6,x86-64"},
-	}
-	if got := pickLdEntry(entries, "x86-64"); got != "/lib/x64.so" {
-		t.Fatalf("preferred tag: got %s", got)
-	}
-
-	// No preferred tag: prefer entry without known machine qualifier.
-	plain := []ldEntry{
-		{path: "/lib/wrong.so", info: "libc6,x86-64"},
-		{path: "/lib/plain.so", info: "libc6"},
-	}
-	if got := pickLdEntry(plain, ""); got != "/lib/plain.so" {
-		t.Fatalf("no preferred tag: got %s", got)
-	}
-
-	// Preferred miss with multiple candidates → empty (avoid wrong arch).
-	if got := pickLdEntry(entries, "AArch64"); got != "" {
-		t.Fatalf("preferred miss with multiple should be empty, got %s", got)
-	}
-
-	// Preferred miss with single candidate → that one.
-	single := []ldEntry{{path: "/lib/only.so", info: "libc6,x32"}}
-	if got := pickLdEntry(single, "x86-64"); got != "/lib/only.so" {
-		t.Fatalf("single fallback: got %s", got)
-	}
-}
-
 func TestNormalizeRpathsOriginBraceAndEmpty(t *testing.T) {
 	origin := "/opt/app"
 	got := normalizeRpaths([]string{"", "${ORIGIN}/lib", "$ORIGIN/../lib"}, origin)
@@ -424,44 +303,5 @@ func TestNormalizeRpathsOriginBraceAndEmpty(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("index %d: got %s want %s", i, got[i], want[i])
 		}
-	}
-}
-
-func TestGetLdmapErrorAndMalformed(t *testing.T) {
-	original := ldconfigRunner
-	defer func() { ldconfigRunner = original }()
-
-	ldconfigRunner = func() ([]byte, error) {
-		return nil, os.ErrPermission
-	}
-	if m := getLdmap("x86-64"); len(m) != 0 {
-		t.Fatalf("expected empty map on error, got %v", m)
-	}
-
-	tmpDir := t.TempDir()
-	okPath := filepath.Join(tmpDir, "libok.so")
-	f, err := os.Create(okPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
-
-	ldconfigRunner = func() ([]byte, error) {
-		return []byte(
-			"not a mapping line\n" +
-				"libbad.so (libc6,x86-64)\n" + // missing =>
-				"libok.so (libc6,x86-64) => " + okPath + "\n" +
-				"libmissing.so (libc6,x86-64) => /no/such/libmissing.so\n",
-		), nil
-	}
-	m := getLdmap("x86-64")
-	if got := m["libok.so"]; got != okPath {
-		t.Fatalf("expected libok.so -> %s, got %s map=%v", okPath, got, m)
-	}
-	if _, ok := m["libmissing.so"]; ok {
-		t.Fatal("missing path should not be in map")
-	}
-	if _, ok := m["libbad.so"]; ok {
-		t.Fatal("malformed line should not be in map")
 	}
 }
