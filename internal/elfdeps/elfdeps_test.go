@@ -290,6 +290,7 @@ func TestStandardLibDirs(t *testing.T) {
 		{name: "ia64", class: elf.ELFCLASS64, machine: elf.EM_IA_64, data: elf.ELFDATA2LSB, needles: []string{"/lib/ia64-linux-gnu"}},
 		{name: "sparc64", class: elf.ELFCLASS64, machine: elf.EM_SPARCV9, data: elf.ELFDATA2MSB, needles: []string{"/lib/sparc64-linux-gnu"}},
 		{name: "sparc32", class: elf.ELFCLASS32, machine: elf.EM_SPARC, data: elf.ELFDATA2MSB, needles: []string{"/lib/sparc-linux-gnu"}},
+		{name: "sparc32plus", class: elf.ELFCLASS32, machine: elf.EM_SPARC32PLUS, data: elf.ELFDATA2MSB, needles: []string{"/lib/sparc-linux-gnu"}},
 		{name: "mips64el", class: elf.ELFCLASS64, machine: elf.EM_MIPS, data: elf.ELFDATA2LSB, needles: []string{"/lib/mips64el-linux-gnuabi64"}, forbidden: "/lib/mips64-linux-gnuabi64"},
 		{name: "mips64", class: elf.ELFCLASS64, machine: elf.EM_MIPS, data: elf.ELFDATA2MSB, needles: []string{"/lib/mips64-linux-gnuabi64"}, forbidden: "/lib/mips64el-linux-gnuabi64"},
 		{name: "mipsel o32", class: elf.ELFCLASS32, machine: elf.EM_MIPS, data: elf.ELFDATA2LSB, needles: []string{"/lib/mipsel-linux-gnu"}, forbidden: "/lib/mips-linux-gnu"},
@@ -312,6 +313,15 @@ func TestStandardLibDirs(t *testing.T) {
 				t.Fatalf("expected /lib fallback in %v", dirs)
 			}
 		})
+	}
+}
+
+func TestMIPSO32DoesNotSearchN32Fallback(t *testing.T) {
+	dirs := standardLibDirs(elf.ELFCLASS32, elf.EM_MIPS, elf.ELFDATA2MSB, 0)
+	for _, forbidden := range []string{"/lib32", "/usr/lib32"} {
+		if containsString(dirs, forbidden) {
+			t.Fatalf("MIPS O32 lookup included N32 directory %s in %v", forbidden, dirs)
+		}
 	}
 }
 

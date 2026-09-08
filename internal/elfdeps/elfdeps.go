@@ -70,13 +70,13 @@ func standardLibDirs(class elf.Class, machine elf.Machine, data elf.Data, flags 
 		dirs = append(multiarchLibDirs("ia64-linux-gnu"), "/lib64", "/usr/lib64")
 	case machine == elf.EM_SPARCV9:
 		dirs = append(multiarchLibDirs("sparc64-linux-gnu"), "/lib64", "/usr/lib64")
-	case machine == elf.EM_SPARC:
+	case machine == elf.EM_SPARC || machine == elf.EM_SPARC32PLUS:
 		dirs = append(multiarchLibDirs("sparc-linux-gnu"), "/lib32", "/usr/lib32")
 	case machine == elf.EM_MIPS:
 		dirs = multiarchLibDirs(mipsMultiarchTuple(class, data, flags))
 		if class == elf.ELFCLASS64 {
 			dirs = append(dirs, "/lib64", "/usr/lib64")
-		} else {
+		} else if flags&mipsABI2 != 0 {
 			dirs = append(dirs, "/lib32", "/usr/lib32")
 		}
 	}
