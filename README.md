@@ -99,8 +99,8 @@ landrun [options] <command> [args...]
 - `--rw <path>`: Allow read-write access to specified path (can be specified multiple times or as comma-separated values)
 - `--rwx <path>`: Allow read-write access with execution to specified path (can be specified multiple times or as comma-separated values)
 - `--unix <path>`: Allow `connect(2)`/`sendmsg(2)` on the specified pathname UNIX domain socket (Landlock ABI v9+; can be specified multiple times or as comma-separated values)
-- `--bind-tcp <port>`: Allow binding to specified TCP port (can be specified multiple times or as comma-separated values)
-- `--connect-tcp <port>`: Allow connecting to specified TCP port (can be specified multiple times or as comma-separated values)
+- `--bind-tcp <port>`: Allow binding to a TCP port in the range 0-65535 (port 0 allows the kernel to select an ephemeral port; can be specified multiple times or as comma-separated values)
+- `--connect-tcp <port>`: Allow connecting to a TCP port in the range 1-65535 (port 0 is rejected; can be specified multiple times or as comma-separated values)
 - `--env <var>`: Environment variable to pass to the sandboxed command (format: KEY=VALUE or just KEY to pass current value)
 - `--preserve-fd <fd>`: Preserve an already-open file descriptor numbered 3 or greater across `exec` (can be specified multiple times or as comma-separated values)
 - `--best-effort`: Use best effort mode, falling back to less restrictive sandbox if necessary [default: disabled]
@@ -123,6 +123,7 @@ landrun [options] <command> [args...]
 - Network restrictions require Linux kernel 6.7 or later with Landlock ABI v4
 - By default, no environment variables are passed to the sandboxed command. Use `--env` to explicitly pass environment variables
 - Standard input, output, and error are inherited. All other open file descriptors are closed on `exec` unless explicitly listed with `--preserve-fd`
+- Invalid policy and launcher/setup failures exit with status 125. Once the command is executed, its own exit status is preserved
 - The `--best-effort` flag allows graceful degradation on older kernels that don't support all requested restrictions. Because the default target is Landlock ABI v9, you will usually want `--best-effort` unless you are on a very recent kernel
 - Paths can be specified either using multiple flags or as comma-separated values (e.g., `--ro /usr,/lib,/home`)
 - If no paths or network rules are specified and neither `--unrestricted-filesystem` nor `--unrestricted-network` is set, landrun applies the maximum filesystem and network restrictions supported by the selected Landlock ABI; IPC scoping is governed separately by `--unrestricted-scoped` (see the next point), and operations outside Landlock's scope remain unaffected

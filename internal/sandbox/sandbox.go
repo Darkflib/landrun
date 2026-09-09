@@ -3,6 +3,7 @@ package sandbox
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/landlock-lsm/go-landlock/landlock"
 	"github.com/landlock-lsm/go-landlock/landlock/syscall"
@@ -26,6 +27,84 @@ type Config struct {
 	DisableLogOriginating bool
 	EnableLogSubprocesses bool
 	DisableLogSubdomains  bool
+}
+
+const maxTCPPort = 65535
+
+// ValidateConfig validates and normalizes a sandbox policy before it is used.
+// Path strings are intentionally not cleaned or made absolute: doing so can
+// change their meaning when symlinks are involved.
+func ValidateConfig(cfg Config) (Config, error) {
+	var err error
+
+	cfg.ReadOnlyPaths, err = normalizePaths("--ro", cfg.ReadOnlyPaths)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.ReadWritePaths, err = normalizePaths("--rw", cfg.ReadWritePaths)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.ReadOnlyExecutablePaths, err = normalizePaths("--rox", cfg.ReadOnlyExecutablePaths)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.ReadWriteExecutablePaths, err = normalizePaths("--rwx", cfg.ReadWriteExecutablePaths)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.UnixSocketPaths, err = normalizePaths("--unix", cfg.UnixSocketPaths)
+	if err != nil {
+		return Config{}, err
+	}
+
+	// Binding port zero has defined Linux semantics: the kernel chooses an
+	// ephemeral port. Connecting to port zero has no corresponding ephemeral
+	// behavior, so reject it as an ambiguous policy request.
+	cfg.BindTCPPorts, err = normalizePorts("--bind-tcp", cfg.BindTCPPorts, 0)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.ConnectTCPPorts, err = normalizePorts("--connect-tcp", cfg.ConnectTCPPorts, 1)
+	if err != nil {
+		return Config{}, err
+	}
+
+	return cfg, nil
+}
+
+func normalizePaths(flag string, paths []string) ([]string, error) {
+	unique := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		if path == "" {
+			return nil, fmt.Errorf("%s path must not be empty", flag)
+		}
+		unique[path] = struct{}{}
+	}
+
+	normalized := make([]string, 0, len(unique))
+	for path := range unique {
+		normalized = append(normalized, path)
+	}
+	sort.Strings(normalized)
+	return normalized, nil
+}
+
+func normalizePorts(flag string, ports []int, minimum int) ([]int, error) {
+	unique := make(map[int]struct{}, len(ports))
+	for _, port := range ports {
+		if port < minimum || port > maxTCPPort {
+			return nil, fmt.Errorf("%s port must be between %d and %d: %d", flag, minimum, maxTCPPort, port)
+		}
+		unique[port] = struct{}{}
+	}
+
+	normalized := make([]int, 0, len(unique))
+	for port := range unique {
+		normalized = append(normalized, port)
+	}
+	sort.Ints(normalized)
+	return normalized, nil
 }
 
 // fullFSAccess is the union of every filesystem access right supported by
@@ -166,6 +245,12 @@ func pathRule(rights landlock.AccessFSSet, path string, ignoreMissing bool) land
 }
 
 func Apply(cfg Config) error {
+	var err error
+	cfg, err = ValidateConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("invalid sandbox policy: %w", err)
+	}
+
 	log.Info("Sandbox config: %+v", cfg)
 
 	if cfg.UnrestrictedFilesystem {

@@ -69,10 +69,10 @@ process.
 
 ### Validate the policy before applying it
 
-- Reject ports outside their defined range before conversion to `uint16`.
-- Define port-zero behavior for bind and connect rules.
-- Normalize duplicate paths and ports for deterministic diagnostics.
-- Return a distinct launcher/configuration error code rather than conflating it
+- [x] Reject ports outside their defined range before conversion to `uint16`.
+- [x] Define port-zero behavior for bind and connect rules.
+- [x] Normalize duplicate paths and ports for deterministic diagnostics.
+- [x] Return a distinct launcher/configuration error code rather than conflating it
   with command failure.
 
 Acceptance gate: invalid input cannot silently produce a different policy.

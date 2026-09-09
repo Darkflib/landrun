@@ -230,7 +230,7 @@ run_test "Execute access with rox flag on file" \
 
 run_test "Execute access with rox flag on a file that is executable in same directory that one is allowed" \
     "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR/test.sh -- $EXEC_DIR/test2.sh" \
-    1
+    125
 
 run_test "Execute a file with --add-exec flag" \
     "./landrun --log-level debug --add-exec --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR/test.sh -- $EXEC_DIR/test2.sh" \
@@ -250,16 +250,16 @@ run_test "Explicitly preserved descriptor survives exec" \
 
 run_test "Closed descriptor cannot be preserved" \
     "./landrun --log-level error --unrestricted-filesystem --unrestricted-network --unrestricted-scoped --preserve-fd 999999 -- true" \
-    1
+    125
 
 run_test "Standard descriptor cannot be listed as preserved" \
     "./landrun --log-level error --unrestricted-filesystem --unrestricted-network --unrestricted-scoped --preserve-fd 2 -- true" \
-    1
+    125
 
 
 run_test "No execute access with just ro flag" \
     "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $EXEC_DIR -- $EXEC_DIR/test.sh" \
-    1
+    125
 
 run_test "Execute access in read-write directory" \
     "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rwx $RW_DIR -- $RW_DIR/rw_script.sh" \
@@ -267,7 +267,7 @@ run_test "Execute access in read-write directory" \
 
 run_test "No execute access in read-write directory without rwx" \
     "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rw $RW_DIR -- $RW_DIR/rw_script.sh" \
-    1
+    125
 
 # Directory traversal tests
 run_test "Directory traversal with root access" \
@@ -299,11 +299,11 @@ run_test "System command with arguments" \
 # Edge cases
 run_test "Non-existent read-only path" \
     "./landrun --log-level debug --ro /usr --ro $SYSTEM_LIB_DIRS --ro /nonexistent/path -- ls" \
-    1
+    125
 
 run_test "No configuration" \
     "./landrun --log-level debug -- ls /" \
-    1
+    125
 
 # Process creation and redirection tests
 run_test "Process creation with pipe" \
@@ -365,7 +365,7 @@ $INTERNET_ACCESS && run_test "Unrestricted network access" \
 
 run_test "Restricted filesystem access" \
     "./landrun --log-level debug ls /usr" \
-    1
+    125
 
 $INTERNET_ACCESS && run_test "Restricted network access" \
     "./landrun --log-level debug --rox / -- curl -s --connect-timeout 2 http://kernel.org" \
@@ -378,7 +378,7 @@ run_test "Ignore missing path with --ignore-missing" \
 
 run_test "Missing path without --ignore-missing still fails" \
     "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro /nonexistent/path -- cat $RO_DIR/test.txt" \
-    1
+    125
 
 run_test "Unrestricted IPC scoping smoke test" \
     "./landrun --log-level debug --unrestricted-scoped --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- cat $RO_DIR/test.txt" \
@@ -391,11 +391,27 @@ run_test "UNIX socket path allowed with --unix" \
 # --- CLI / startup edge cases ---
 run_test "Missing command to run" \
     "./landrun --log-level error" \
-    1
+    125
 
 run_test "Unknown binary fails" \
     "./landrun --log-level error --rox /usr -- /nonexistent/landrun-binary-xyz" \
-    1
+    125
+
+run_test "Negative bind port is rejected without wrapping" \
+    "./landrun --log-level error --bind-tcp -1 -- true" \
+    125
+
+run_test "Oversized connect port is rejected without wrapping" \
+    "./landrun --log-level error --connect-tcp 131071 -- true" \
+    125
+
+run_test "Connect port zero is rejected" \
+    "./landrun --log-level error --connect-tcp 0 -- true" \
+    125
+
+run_test "Executed command exit status is preserved" \
+    "./landrun --log-level error --unrestricted-filesystem --unrestricted-network --unrestricted-scoped -- /bin/sh -c 'exit 42'" \
+    42
 
 run_test "Missing env key is omitted" \
     "./landrun --log-level debug --rox /usr --ro / --env LANDRUN_MISSING_ENV_KEY_XYZ --env PATH -- bash -c '[[ -z \$LANDRUN_MISSING_ENV_KEY_XYZ ]]'" \
@@ -436,7 +452,7 @@ run_test "Execute from nested exec dir under ro parent" \
 
 run_test "Execute denied from nested exec dir with only ro parent" \
     "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- $RO_DIR_NESTED_EXEC/test.sh" \
-    1
+    125
 
 run_test "ldd without add-exec still resolves libraries for true" \
     "./landrun --log-level debug --ldd --add-exec -- $(which true)" \
@@ -447,7 +463,7 @@ run_test "ldd without add-exec still resolves libraries for true" \
 TRUE_BIN=$(which true)
 run_test "ldd alone without binary path may fail to exec" \
     "./landrun --log-level debug --ldd -- $TRUE_BIN" \
-    1
+    125
 
 run_test "ldd with explicit rox of binary succeeds" \
     "./landrun --log-level debug --ldd --rox $TRUE_BIN -- $TRUE_BIN" \
@@ -466,6 +482,16 @@ import socket, sys
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 s.bind(('127.0.0.1', $BIND_PORT))
+s.close()
+\"" \
+    0
+
+run_test "TCP bind port zero allows an ephemeral port" \
+    "$PY_LANDRUN --bind-tcp 0 -- $PYTHON -c \"
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind(('127.0.0.1', 0))
+assert s.getsockname()[1] != 0
 s.close()
 \"" \
     0
@@ -574,7 +600,7 @@ run_test "unix on a directory path" \
 if [ "$LANDLOCK_ABI" -lt 9 ] 2>/dev/null; then
     run_test_strict "Strict V9 fails on ABI < 9 kernels" \
         "./landrun --log-level error --rox /usr --ro $SYSTEM_LIB_DIRS -- true" \
-        1
+        125
 else
     print_status "Skipping strict-V9 failure test (kernel ABI >= 9)"
     run_test_strict "Strict V9 succeeds on ABI >= 9 kernels" \

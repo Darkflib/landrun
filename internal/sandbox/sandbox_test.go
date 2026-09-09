@@ -4,6 +4,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/landlock-lsm/go-landlock/landlock"
@@ -141,6 +143,98 @@ func TestPathRule(t *testing.T) {
 	ignored := pathRule(rights, "/nonexistent-landrun-path", true)
 	if ignored == nil {
 		t.Fatal("expected non-nil ignore-missing rule")
+	}
+}
+
+func TestValidateConfigNormalizesPolicy(t *testing.T) {
+	cfg := Config{
+		ReadOnlyPaths:            []string{"/z", "/a", "/z"},
+		ReadWritePaths:           []string{"relative", "relative"},
+		ReadOnlyExecutablePaths:  []string{"/usr", "/bin", "/usr"},
+		ReadWriteExecutablePaths: []string{"/srv/app", "/srv/app"},
+		UnixSocketPaths:          []string{"/run/z.sock", "/run/a.sock", "/run/z.sock"},
+		BindTCPPorts:             []int{65535, 0, 443, 443},
+		ConnectTCPPorts:          []int{65535, 443, 443},
+	}
+
+	got, err := ValidateConfig(cfg)
+	if err != nil {
+		t.Fatalf("ValidateConfig failed: %v", err)
+	}
+
+	checks := []struct {
+		name string
+		got  interface{}
+		want interface{}
+	}{
+		{name: "read-only paths", got: got.ReadOnlyPaths, want: []string{"/a", "/z"}},
+		{name: "read-write paths", got: got.ReadWritePaths, want: []string{"relative"}},
+		{name: "read-only executable paths", got: got.ReadOnlyExecutablePaths, want: []string{"/bin", "/usr"}},
+		{name: "read-write executable paths", got: got.ReadWriteExecutablePaths, want: []string{"/srv/app"}},
+		{name: "UNIX socket paths", got: got.UnixSocketPaths, want: []string{"/run/a.sock", "/run/z.sock"}},
+		{name: "bind ports", got: got.BindTCPPorts, want: []int{0, 443, 65535}},
+		{name: "connect ports", got: got.ConnectTCPPorts, want: []int{443, 65535}},
+	}
+	for _, check := range checks {
+		if !reflect.DeepEqual(check.got, check.want) {
+			t.Errorf("%s: got %#v, want %#v", check.name, check.got, check.want)
+		}
+	}
+}
+
+func TestValidateConfigRejectsInvalidPorts(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{name: "negative bind", cfg: Config{BindTCPPorts: []int{-1}}, want: "--bind-tcp port must be between 0 and 65535: -1"},
+		{name: "oversized bind", cfg: Config{BindTCPPorts: []int{65536}}, want: "--bind-tcp port must be between 0 and 65535: 65536"},
+		{name: "zero connect", cfg: Config{ConnectTCPPorts: []int{0}}, want: "--connect-tcp port must be between 1 and 65535: 0"},
+		{name: "negative connect", cfg: Config{ConnectTCPPorts: []int{-1}}, want: "--connect-tcp port must be between 1 and 65535: -1"},
+		{name: "oversized connect", cfg: Config{ConnectTCPPorts: []int{131071}}, want: "--connect-tcp port must be between 1 and 65535: 131071"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ValidateConfig(tc.cfg)
+			if err == nil || err.Error() != tc.want {
+				t.Fatalf("got error %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateConfigRejectsEmptyPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  Config
+		flag string
+	}{
+		{name: "ro", cfg: Config{ReadOnlyPaths: []string{""}}, flag: "--ro"},
+		{name: "rw", cfg: Config{ReadWritePaths: []string{""}}, flag: "--rw"},
+		{name: "rox", cfg: Config{ReadOnlyExecutablePaths: []string{""}}, flag: "--rox"},
+		{name: "rwx", cfg: Config{ReadWriteExecutablePaths: []string{""}}, flag: "--rwx"},
+		{name: "unix", cfg: Config{UnixSocketPaths: []string{""}}, flag: "--unix"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ValidateConfig(tc.cfg)
+			if err == nil || !strings.Contains(err.Error(), tc.flag+" path must not be empty") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestApplyValidatesBeforeUnrestrictedNoOp(t *testing.T) {
+	err := Apply(Config{
+		ConnectTCPPorts:        []int{0},
+		UnrestrictedFilesystem: true,
+		UnrestrictedNetwork:    true,
+		UnrestrictedScoped:     true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid sandbox policy") {
+		t.Fatalf("expected policy validation error, got %v", err)
 	}
 }
 
