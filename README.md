@@ -246,6 +246,7 @@ These are restricted by default and can be relaxed with `--unrestricted-scoped`.
 - This version does not restrict UDP traffic
 - `--best-effort` may still omit unrequested higher-ABI coverage, but it will not drop an explicitly requested path, TCP, UNIX-socket, or audit-logging control
 - `--ldd` resolves dependencies without executing `ldconfig` or another helper; it supports standard Intel and ARM multilib layouts and fails closed for other ELF machine types, ambiguous 32-bit ARM float-ABI flags, or libraries only discoverable through a non-standard loader-cache entry
+- The resolved command is opened before policy setup and executed by descriptor, preventing a path replacement between policy construction and launch; scripts still require execute access to their shebang interpreter
 - Some operations may require additional permissions
 - Files, directories, and sockets intentionally preserved with `--preserve-fd` are not retroactively restricted by Landlock
 

@@ -173,6 +173,11 @@ func newCommand() *cli.Command {
 			if err != nil {
 				return fmt.Errorf("failed to find binary: %w", err)
 			}
+			executable, err := exec.OpenExecutable(binary)
+			if err != nil {
+				return fmt.Errorf("failed to open executable: %w", err)
+			}
+			defer executable.Close()
 
 			// Add command to readOnlyExecutablePaths
 			if c.Bool("add-exec") {
@@ -219,7 +224,7 @@ func newCommand() *cli.Command {
 				return fmt.Errorf("failed to prepare inherited descriptors: %w", err)
 			}
 
-			if err := exec.Run(binary, args, envVars); err != nil {
+			if err := exec.RunFile(executable, args, envVars); err != nil {
 				return fmt.Errorf("failed to execute command: %w", err)
 			}
 			return nil
