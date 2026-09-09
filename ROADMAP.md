@@ -148,7 +148,7 @@ behavior, negative tests, and documented limitations.
 
 ## Milestone 4: Release and security process
 
-- Add `SECURITY.md` with a private vulnerability-reporting route and supported
+- [x] Add `SECURITY.md` with a private vulnerability-reporting route and supported
   release policy.
 - Publish signed tags, checksums, and a software bill of materials for release
   artifacts.
