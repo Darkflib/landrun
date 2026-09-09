@@ -160,10 +160,12 @@ run_test() {
         cmd="${cmd//.\/landrun/landrun}"
     fi
 
-    # The default target is Landlock ABI v9. Inject --best-effort so the suite
-    # gracefully degrades and runs on kernels below v9. This only affects which
-    # ABI level is targeted; the allow/deny semantics being tested are unchanged.
-    cmd="${cmd/landrun /landrun --best-effort }"
+    # Strict mode exercises the full ABI-9 policy where available. Older
+    # kernels use best-effort for unrequested higher-ABI coverage; explicit
+    # feature tests are gated below at their required ABI.
+    if [ "$LANDLOCK_ABI" -lt 9 ]; then
+        cmd="${cmd/landrun /landrun --best-effort }"
+    fi
 
     print_status "Running test: $name"
     eval "$cmd"
@@ -381,7 +383,7 @@ $INTERNET_ACCESS && run_test "Restricted network access" \
     "./landrun --log-level debug --rox / -- curl -s --connect-timeout 2 http://kernel.org" \
     7
 
-# New feature tests (Landlock V6-V9 / go-landlock v0.9.0)
+# New feature tests (Landlock V6-V9 / go-landlock v0.10.0)
 run_test "Ignore missing path with --ignore-missing" \
     "./landrun --log-level debug --ignore-missing --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --ro /nonexistent/path -- cat $RO_DIR/test.txt" \
     0
@@ -395,11 +397,35 @@ run_test "Unrestricted IPC scoping smoke test" \
     0
 
 if [ "$LANDLOCK_ABI" -ge 9 ]; then
+    UNIX_ALLOWED="$TEST_DIR/allowed.sock"
+    UNIX_LISTENER_LOG="$TEST_DIR/unix-listener.log"
+    /usr/bin/python3 -c "import socket,sys; p='$UNIX_ALLOWED'; s=socket.socket(socket.AF_UNIX); s.bind(p); s.listen(1); print('ready', flush=True); c,_=s.accept(); c.close(); s.close()" >"$UNIX_LISTENER_LOG" 2>&1 &
+    UNIX_LISTENER_PID=$!
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        if grep -q ready "$UNIX_LISTENER_LOG" 2>/dev/null; then break; fi
+        sleep 0.1
+    done
+
     run_test "UNIX socket path allowed with --unix" \
-        "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --unix $RO_DIR/test.txt -- cat $RO_DIR/test.txt" \
+        "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $TEST_DIR --unix $UNIX_ALLOWED -- /usr/bin/python3 -c \"import socket; s=socket.socket(socket.AF_UNIX); s.connect('$UNIX_ALLOWED'); s.close()\"" \
         0
+    wait "$UNIX_LISTENER_PID" 2>/dev/null || true
+
+    UNIX_DENIED="$TEST_DIR/denied.sock"
+    UNIX_DENIED_LOG="$TEST_DIR/unix-denied-listener.log"
+    /usr/bin/python3 -c "import socket,sys; p='$UNIX_DENIED'; s=socket.socket(socket.AF_UNIX); s.bind(p); s.listen(1); print('ready', flush=True); c,_=s.accept(); c.close(); s.close()" >"$UNIX_DENIED_LOG" 2>&1 &
+    UNIX_DENIED_PID=$!
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        if grep -q ready "$UNIX_DENIED_LOG" 2>/dev/null; then break; fi
+        sleep 0.1
+    done
+    run_test "UNIX socket path denied without --unix" \
+        "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $TEST_DIR -- /usr/bin/python3 -c \"import socket; s=socket.socket(socket.AF_UNIX); s.connect('$UNIX_DENIED')\"" \
+        1
+    kill "$UNIX_DENIED_PID" 2>/dev/null || true
+    wait "$UNIX_DENIED_PID" 2>/dev/null || true
 else
-    print_status "Skipping pathname UNIX socket test (kernel ABI < 9)"
+    print_status "Skipping pathname UNIX socket tests (kernel ABI < 9)"
 fi
 
 # --- CLI / startup edge cases ---
@@ -612,14 +638,6 @@ if [ "$LANDLOCK_ABI" -ge 7 ]; then
         0
 else
     print_status "Skipping audit-log test (kernel ABI < 7)"
-fi
-
-if [ "$LANDLOCK_ABI" -ge 9 ]; then
-    run_test "unix on a directory path" \
-        "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --unix $RO_DIR -- cat $RO_DIR/test.txt" \
-        0
-else
-    print_status "Skipping pathname UNIX directory test (kernel ABI < 9)"
 fi
 
 # --- Strict mode (no --best-effort) ---

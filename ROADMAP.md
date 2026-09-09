@@ -113,12 +113,12 @@ discarded a rule the caller asked for.
 - Add regression tests for the findings in the security review.
 - Replace network-dependent integration tests with local deterministic peers;
   keep optional external smoke tests separate.
-- Stop injecting `--best-effort` into every integration case. Gate the `--unix`
+- [x] Stop injecting `--best-effort` into every integration case. Gate the `--unix`
   cases on ABI 9, run them strictly, and make them connect to a real socket in
   both the allowed and the denied direction.
-- Make the integration suite fail loudly when the Landlock ABI probe cannot run,
+- [x] Make the integration suite fail loudly when the Landlock ABI probe cannot run,
   instead of falling back to 0 and inverting the strict-ABI assertion.
-- Drop the suite's `go run` dependency once `landrun --probe` exists, so it can
+- [x] Drop the suite's `go run` dependency once `landrun --probe` exists, so it can
   run against a downloaded artifact without a Go toolchain.
 - Lint the security-relevant surfaces in CI: `shellcheck` on `test.sh` and
   `actionlint` on the workflows.

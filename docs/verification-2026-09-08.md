@@ -57,31 +57,15 @@ already in flight.
 
 ### B. Integration suite gives false assurance
 
-**B1 — the suite injects `--best-effort` into every case.** `test.sh:156`
-rewrites each command, with a comment claiming "the allow/deny semantics being
-tested are unchanged". That is not true for `LANDLOCK_ACCESS_FS_RESOLVE_UNIX`.
-GitHub's runners report Landlock ABI 7, so best-effort strips the ABI 9 right
-and the two `--unix` tests at `test.sh:387` and `test.sh:570` pass without
-exercising anything.
+**B1 — resolved in the ABI and integration hardening follow-up.** The suite now
+uses the artifact's `--probe-json`, applies best-effort only below ABI 9, gates
+ABI 9 pathname-UNIX tests, and exercises a real local socket in both allowed and
+denied directions. Explicit ABI requirements are rejected by the launcher even
+when best-effort is requested.
 
-Compounding it, neither test touches a UNIX socket — both grant `--unix` and
-then `cat` a regular file. Effective coverage of `--unix` is zero on any kernel.
-
-Suggested fix: gate the `--unix` cases on `LANDLOCK_ABI >= 9`, run them through
-`run_test_strict`, and make them actually connect to a socket — one allowed and
-one denied.
-
-**B2 — the ABI probe fails open and is not offline.** `test.sh:138` runs
-`go run github.com/landlock-lsm/go-landlock/cmd/landlock-abi-version@v0.9.0`,
-which needs a Go toolchain and, on a cold module cache, network access — inside
-the mode that is meant to be offline. It falls back to `|| echo 0`, and
-`LANDLOCK_ABI=0` flips the strict-V9 assertion at `test.sh:574` to the
-*expect-failure* branch. A probe that fails for any reason still reports a pass.
-
-Suggested fix: fail loudly when the probe cannot run. Better, land Milestone 1's
-`landrun --probe` and use the binary under test, which removes the toolchain
-dependency and makes the suite genuinely runnable against a downloaded release
-artifact.
+**B2 — resolved in the ABI and integration hardening follow-up.** The suite no
+longer invokes `go run` or depends on a module cache for ABI discovery. A failed
+artifact probe is a setup failure, and cannot invert the strict-ABI assertion.
 
 **B3 — the suite is unlintable and unlinted.** `test.sh` is 20 KB of bash that
 encodes the policy assertions, and CI checks it with `bash -n` only. Adding
