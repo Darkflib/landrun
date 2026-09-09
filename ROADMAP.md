@@ -84,7 +84,7 @@ Acceptance gate: invalid input cannot silently produce a different policy.
 - [x] Reject unsupported explicitly requested features, including under
   `--best-effort`.
 - [x] Print or expose the effective ABI and enforced rights in debug output.
-- Add ABI-boundary tests for filesystem truncation, TCP, device IOCTL, scopes,
+- [x] Add ABI-boundary tests for filesystem truncation, TCP, device IOCTL, scopes,
   audit controls, and pathname UNIX sockets.
 
 Acceptance gate: a successful launch proves that every explicit rule was
@@ -107,9 +107,10 @@ discarded a rule the caller asked for.
 ## Milestone 2: Strengthen compatibility and coverage
 
 - [x] Upgrade to the current `go-landlock` release after reviewing its ABI changes.
-- Add controlled tests for ABI 4, 6, 9, and the newest supported ABI using VMs
+- [x] Add controlled tests for ABI 4, 6, 9, and the newest supported ABI using VMs
   or dedicated runners; hosted-runner kernel versions are not a sufficient
-  compatibility matrix.
+  compatibility matrix. The pinned UML matrix and update process are documented
+  in [ABI testing](docs/abi-testing.md).
 - Add regression tests for the findings in the security review.
 - Replace network-dependent integration tests with local deterministic peers;
   keep optional external smoke tests separate.

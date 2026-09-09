@@ -1,0 +1,144 @@
+name: Landlock ABI matrix
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: abi-matrix-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LANDLOCK_TEST_TOOLS_COMMIT: 1dd31a0f7961cd7107b78497859d593849f30008
+
+jobs:
+  kernels:
+    name: Build UML kernel ${{ matrix.version }} (ABI ${{ matrix.abi }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "6.7"
+            abi: 4
+            commit: dacf7e83da42bd9d3978560e41869a784c24d912
+          - version: "6.12"
+            abi: 6
+            commit: 833291ee77846538926c990bcb468f6f54e9af50
+          - version: "7.1"
+            abi: 9
+            commit: 2609d60e2f6d0b8a96563baa08b56482962cebaa
+          - version: "7.2"
+            abi: 10
+            commit: 075b74841bd0065a3bda3440873c747938e69b68
+    steps:
+      - name: Cache UML kernel
+        id: cache-kernel
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: linux-${{ matrix.version }}
+          key: landlock-uml-${{ matrix.commit }}-${{ env.LANDLOCK_TEST_TOOLS_COMMIT }}
+
+      - name: Checkout Landlock test tools
+        if: steps.cache-kernel.outputs.cache-hit != 'true'
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          repository: landlock-lsm/landlock-test-tools
+          ref: ${{ env.LANDLOCK_TEST_TOOLS_COMMIT }}
+          path: landlock-test-tools
+          fetch-depth: '1'
+          persist-credentials: false
+
+      - name: Checkout Linux ${{ matrix.version }}
+        if: steps.cache-kernel.outputs.cache-hit != 'true'
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          repository: landlock-lsm/linux
+          ref: ${{ matrix.commit }}
+          path: linux-source
+          fetch-depth: '1'
+          persist-credentials: false
+
+      - name: Build light UML kernel
+        if: steps.cache-kernel.outputs.cache-hit != 'true'
+        working-directory: linux-source
+        run: |
+          O=. BUILD_FLAVOR=light ../landlock-test-tools/check-linux.sh build
+          mv linux ../linux-${{ matrix.version }}
+
+      - name: Verify UML kernel
+        run: |
+          test -x linux-${{ matrix.version }}
+          file linux-${{ matrix.version }}
+
+  test:
+    name: Test Landlock ABI ${{ matrix.abi }} on Linux ${{ matrix.version }}
+    needs: kernels
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "6.7"
+            abi: 4
+            commit: dacf7e83da42bd9d3978560e41869a784c24d912
+          - version: "6.12"
+            abi: 6
+            commit: 833291ee77846538926c990bcb468f6f54e9af50
+          - version: "7.1"
+            abi: 9
+            commit: 2609d60e2f6d0b8a96563baa08b56482962cebaa
+          - version: "7.2"
+            abi: 10
+            commit: 075b74841bd0065a3bda3440873c747938e69b68
+    steps:
+      - name: Checkout landrun
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: '1'
+          persist-credentials: false
+
+      - name: Checkout Landlock test tools
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          repository: landlock-lsm/landlock-test-tools
+          ref: ${{ env.LANDLOCK_TEST_TOOLS_COMMIT }}
+          path: landlock-test-tools
+          fetch-depth: '1'
+          persist-credentials: false
+
+      - name: Configure minimal UML guest
+        run: |
+          git -C landlock-test-tools apply ../ci/landlock-test-tools-minimal.patch
+
+      - name: Restore UML kernel
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: linux-${{ matrix.version }}
+          key: landlock-uml-${{ matrix.commit }}-${{ env.LANDLOCK_TEST_TOOLS_COMMIT }}
+          fail-on-cache-miss: true
+
+      - name: Set up Go
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+        with:
+          go-version: "stable"
+
+      - name: Build static landrun
+        env:
+          CGO_ENABLED: "0"
+        run: go build -trimpath -o landrun ./cmd/landrun
+
+      - name: Test ABI boundary and policy behavior
+        run: |
+          set -o pipefail
+          timeout --signal=TERM --kill-after=30s 15m </dev/null 2>&1 \
+            ./landlock-test-tools/uml-run.sh ./linux-${{ matrix.version }} -- \
+            ./ci/test-abi-boundary.sh ${{ matrix.abi }} \
+            | timeout --signal=TERM --kill-after=30s 16m cat
