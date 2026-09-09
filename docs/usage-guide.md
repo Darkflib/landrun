@@ -48,6 +48,13 @@ object in the dependency chain must declare either the hard-float or soft-float
 ABI flag; ambiguous objects are rejected. Non-standard dynamic-loader cache
 entries may also need explicit `--rox` rules.
 
+Landrun opens the resolved command before applying Landlock and executes that
+descriptor with `execveat(2)`. This prevents a writable directory or another
+actor from replacing the command between policy construction and launch. A
+script is handed to its shebang interpreter through the same opened descriptor;
+for the strongest policy, invoke a trusted interpreter explicitly and grant its
+path with `--rox`.
+
 ### Work in one writable directory
 
 ```bash

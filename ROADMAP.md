@@ -50,7 +50,7 @@ Target: next security-focused release.
   policy creation and `exec`.
 - [x] Add hostile-`PATH` and unresolved-SONAME regression tests, and prove that
   `exec` does not re-consult `PATH` after policy construction.
-- [ ] Carry the resolved executable as a descriptor rather than a path, so the
+- [x] Carry the resolved executable as a descriptor rather than a path, so the
   file cannot be replaced between policy construction and `execve`.
 - [x] Preserve standard multiarch lookup for supported Intel and ARM ELF ABIs,
   and reject other ABIs without reintroducing a helper process.
