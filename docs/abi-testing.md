@@ -24,7 +24,11 @@ The upstream guest init opportunistically mounts 9p and FUSE fixtures when it
 finds their helpers through systemd's guest environment. Landrun does not use
 either optional filesystem. The workflow applies the narrow, checked-in
 `ci/landlock-test-tools-minimal.patch` to skip those fixtures. `git apply` fails
-closed if a future test-tools pin changes the surrounding init code.
+closed if a future test-tools pin changes the surrounding init code. The same
+patch replaces the harness's generic base64 command handoff with its existing
+ABI boot parameter and a fixed, unprivileged call to the repository-owned
+boundary-test script. It also uses the absolute system poweroff path because
+the guest inherits a deliberately narrow host `PATH`.
 
 The UML harness currently produces x86_64 kernels, so this compatibility matrix
 runs on amd64. The regular build and integration workflows separately compile

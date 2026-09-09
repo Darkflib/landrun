@@ -1,11 +1,16 @@
 diff --git a/guest/init.sh b/guest/init.sh
-index 7ce3a22..ec36dc1 100755
+index 7ce3a22..48bf6ec 100755
 --- a/guest/init.sh
 +++ b/guest/init.sh
-@@ -98,25 +98,7 @@ if [[ ! -d /mnt ]]; then
- fi
+@@ -34,3 +34,3 @@ exit_poweroff() {
+-	exec poweroff -f
+-	exit 1
++	exec /usr/sbin/poweroff -f
++	exit 1
+ }
+@@ -99,31 +99,8 @@
  mount -t tmpfs -o "mode=755,nosuid,nodev" tmpfs /mnt
- 
+-
 -if command -v diod >/dev/null; then
 -	mkdir /mnt/test-v9fs-src
 -	chmod 1777 /mnt/test-v9fs-src
@@ -25,7 +30,20 @@ index 7ce3a22..ec36dc1 100755
 -else
 -	echo "WARNING: Could not find the bindfs command." >&2
 -fi
+-
+-DECODED_EXEC="$(printf "%s" "${TEST_EXEC}" | base64 -d)"
+-SHELL_SH="$(dirname -- "${BASH_SOURCE[0]}")/shell.sh"
+-
 +echo "[*] Skipping optional 9p and FUSE fixtures"
- 
- DECODED_EXEC="$(printf "%s" "${TEST_EXEC}" | base64 -d)"
- SHELL_SH="$(dirname -- "${BASH_SOURCE[0]}")/shell.sh"
++echo "[*] Launching ABI ${LANDLOCK_CRATE_TEST_ABI} boundary tests"
+-echo "[*] Launching ${SHELL_SH} ${DECODED_EXEC}"
+-
++cd "${TEST_CWD}"
+-RET=0
++RET=0
+-"${SHELL_SH}" "${DECODED_EXEC}" || RET=$?
+-
++setpriv --reuid "${TEST_UID}" --clear-groups -- \
++	./ci/test-abi-boundary.sh "${LANDLOCK_CRATE_TEST_ABI}" || RET=$?
+-echo "[*] Returned value: ${RET}"
++echo "[*] Returned value: ${RET}"
