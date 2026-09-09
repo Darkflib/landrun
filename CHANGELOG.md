@@ -46,6 +46,8 @@ semantics, and minimum Landlock ABI changes are called out explicitly.
 - The maximum public policy ABI and exact handled-access sets are now explicit
   compatibility contracts, preventing dependency upgrades from silently
   enabling new access-right families.
+- CI artifacts now carry verified Go build metadata, and `landrun --version`
+  reports the exact source revision and Go toolchain embedded in the binary.
 
 ### Landlock compatibility
 

@@ -3,8 +3,19 @@ package main
 import (
 	"os"
 	"reflect"
+	"runtime"
+	"strings"
 	"testing"
 )
+
+func TestVersionStringIncludesBuildIdentity(t *testing.T) {
+	got := versionString()
+	for _, want := range []string{Version, "revision ", runtime.Version()} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("versionString() = %q, missing %q", got, want)
+		}
+	}
+}
 
 func TestProcessEnvironmentVars(t *testing.T) {
 	t.Setenv("LANDRUN_TEST_ENV_A", "value-a")
