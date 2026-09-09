@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -325,6 +326,9 @@ func TestApplySubprocessEmptyRules(t *testing.T) {
 
 func runApplyInSubprocess(t *testing.T, testName string) {
 	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("Landlock integration tests require Linux")
+	}
 	if os.Getenv("LANDRUN_SANDBOX_HELPER") == "1" {
 		return
 	}
