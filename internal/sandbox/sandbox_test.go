@@ -227,14 +227,28 @@ func TestValidateConfigRejectsEmptyPaths(t *testing.T) {
 }
 
 func TestApplyValidatesBeforeUnrestrictedNoOp(t *testing.T) {
-	err := Apply(Config{
-		ConnectTCPPorts:        []int{0},
-		UnrestrictedFilesystem: true,
-		UnrestrictedNetwork:    true,
-		UnrestrictedScoped:     true,
-	})
-	if err == nil || !strings.Contains(err.Error(), "invalid sandbox policy") {
-		t.Fatalf("expected policy validation error, got %v", err)
+	for _, tc := range []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{name: "read-only rule", cfg: Config{ReadOnlyPaths: []string{"/tmp"}, UnrestrictedFilesystem: true}, want: "--unrestricted-filesystem"},
+		{name: "read-write rule", cfg: Config{ReadWritePaths: []string{"/tmp"}, UnrestrictedFilesystem: true}, want: "--unrestricted-filesystem"},
+		{name: "read-only executable rule", cfg: Config{ReadOnlyExecutablePaths: []string{"/tmp"}, UnrestrictedFilesystem: true}, want: "--unrestricted-filesystem"},
+		{name: "read-write executable rule", cfg: Config{ReadWriteExecutablePaths: []string{"/tmp"}, UnrestrictedFilesystem: true}, want: "--unrestricted-filesystem"},
+		{name: "UNIX socket rule", cfg: Config{UnixSocketPaths: []string{"/run/app.sock"}, UnrestrictedFilesystem: true}, want: "--unrestricted-filesystem"},
+		{name: "bind rule", cfg: Config{BindTCPPorts: []int{443}, UnrestrictedNetwork: true}, want: "--unrestricted-network"},
+		{name: "network rule", cfg: Config{ConnectTCPPorts: []int{443}, UnrestrictedNetwork: true}, want: "--unrestricted-network"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Apply(tc.cfg)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected policy validation error containing %q, got %v", tc.want, err)
+			}
+		})
+	}
+	if err := Apply(Config{UnrestrictedFilesystem: true, UnrestrictedNetwork: true, UnrestrictedScoped: true}); err != nil {
+		t.Fatalf("unrestricted policy without rules should remain valid: %v", err)
 	}
 }
 
@@ -265,8 +279,8 @@ func TestApplySubprocessNetAndFlags(t *testing.T) {
 	runApplyInSubprocess(t, "TestApplyHelperNetAndFlags")
 }
 
-func TestApplySubprocessUnrestrictedFSIgnoresUnix(t *testing.T) {
-	runApplyInSubprocess(t, "TestApplyHelperUnrestrictedFSIgnoresUnix")
+func TestApplySubprocessUnrestrictedFSRejectsUnix(t *testing.T) {
+	runApplyInSubprocess(t, "TestApplyHelperUnrestrictedFSRejectsUnix")
 }
 
 func TestApplySubprocessUnrestrictedNetwork(t *testing.T) {
@@ -374,7 +388,7 @@ func TestApplyHelperNetAndFlags(t *testing.T) {
 	os.Exit(0)
 }
 
-func TestApplyHelperUnrestrictedFSIgnoresUnix(t *testing.T) {
+func TestApplyHelperUnrestrictedFSRejectsUnix(t *testing.T) {
 	if os.Getenv("LANDRUN_SANDBOX_HELPER") != "1" {
 		t.Skip("subprocess helper")
 	}
@@ -384,8 +398,8 @@ func TestApplyHelperUnrestrictedFSIgnoresUnix(t *testing.T) {
 		UnixSocketPaths:        []string{"/run/ignored.sock"},
 		BindTCPPorts:           []int{18081},
 	})
-	if err != nil {
-		t.Fatalf("Apply unrestricted FS failed: %v", err)
+	if err == nil {
+		os.Exit(1)
 	}
 	os.Exit(0)
 }
@@ -401,7 +415,6 @@ func TestApplyHelperUnrestrictedNetwork(t *testing.T) {
 		UnrestrictedScoped:      true,
 		ReadOnlyPaths:           []string{dir},
 		ReadOnlyExecutablePaths: []string{"/usr"},
-		BindTCPPorts:            []int{9999}, // ignored because net unrestricted
 	})
 	if err != nil {
 		t.Fatalf("Apply unrestricted network failed: %v", err)

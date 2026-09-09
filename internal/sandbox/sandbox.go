@@ -35,6 +35,13 @@ const maxTCPPort = 65535
 // Path strings are intentionally not cleaned or made absolute: doing so can
 // change their meaning when symlinks are involved.
 func ValidateConfig(cfg Config) (Config, error) {
+	if cfg.UnrestrictedFilesystem && hasAny(cfg.ReadOnlyPaths, cfg.ReadWritePaths, cfg.ReadOnlyExecutablePaths, cfg.ReadWriteExecutablePaths, cfg.UnixSocketPaths) {
+		return Config{}, fmt.Errorf("--unrestricted-filesystem cannot be combined with filesystem or UNIX socket rules")
+	}
+	if cfg.UnrestrictedNetwork && len(cfg.BindTCPPorts)+len(cfg.ConnectTCPPorts) > 0 {
+		return Config{}, fmt.Errorf("--unrestricted-network cannot be combined with TCP port rules")
+	}
+
 	var err error
 
 	cfg.ReadOnlyPaths, err = normalizePaths("--ro", cfg.ReadOnlyPaths)
@@ -73,6 +80,17 @@ func ValidateConfig(cfg Config) (Config, error) {
 	return cfg, nil
 }
 
+// hasAny reports whether any policy field contains at least one entry.
+func hasAny(groups ...[]string) bool {
+	for _, group := range groups {
+		if len(group) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizePaths rejects empty entries and returns sorted unique path strings.
 func normalizePaths(flag string, paths []string) ([]string, error) {
 	unique := make(map[string]struct{}, len(paths))
 	for _, path := range paths {
@@ -90,6 +108,7 @@ func normalizePaths(flag string, paths []string) ([]string, error) {
 	return normalized, nil
 }
 
+// normalizePorts validates the flag-specific range and returns sorted unique ports.
 func normalizePorts(flag string, ports []int, minimum int) ([]int, error) {
 	unique := make(map[int]struct{}, len(ports))
 	for _, port := range ports {

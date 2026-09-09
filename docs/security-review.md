@@ -147,14 +147,14 @@ Recommended remediation:
 Severity: Medium, rising to High when callers treat successful startup as proof
 that every requested restriction is active.
 
-Status: Open. Found during the 2026-09-08 verification pass, not the original
-review.
+Status: Remediated in this change. Matching rule and `--unrestricted-*` flags
+are rejected during policy validation, before any Landlock interaction.
 
-`--unrestricted-filesystem` discards every `--ro`, `--rw`, `--rox` and `--rwx`
-rule with no diagnostic, and `--unix` with only a `log.Info` line that is
-invisible at the default `--log-level error`. `--unrestricted-network` discards
-`--bind-tcp` and `--connect-tcp` with no diagnostic. landrun exits 0 in every
-case, so:
+Before remediation, `--unrestricted-filesystem` discarded every `--ro`, `--rw`,
+`--rox` and `--rwx` rule with no diagnostic, and `--unix` with only a `log.Info`
+line that was invisible at the default `--log-level error`.
+`--unrestricted-network` likewise discarded `--bind-tcp` and `--connect-tcp`.
+landrun exited 0 in every case, so:
 
 ```text
 landrun --unrestricted-network --connect-tcp 443 -- cmd

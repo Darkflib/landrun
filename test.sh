@@ -563,7 +563,7 @@ except OSError:
     1
 
 run_test "Unrestricted filesystem still restricts network without connect-tcp" \
-    "./landrun --log-level debug --unrestricted-filesystem --add-exec --ldd -- $PYTHON -c \"
+    "./landrun --log-level debug --unrestricted-filesystem -- $PYTHON -c \"
 import socket, sys
 try:
     s = socket.create_connection(('127.0.0.1', $BIND_PORT_OTHER), timeout=1)
@@ -579,9 +579,13 @@ run_test "All domains unrestricted is a no-op sandbox" \
     "./landrun --log-level debug --unrestricted-filesystem --unrestricted-network --unrestricted-scoped -- echo ok" \
     0
 
-run_test "unix paths ignored when filesystem unrestricted" \
+run_test "filesystem rule rejected when filesystem unrestricted" \
     "./landrun --log-level debug --unrestricted-filesystem --unix /run/does-not-matter.sock -- echo ok" \
-    0
+    125
+
+run_test "TCP rule rejected when network unrestricted" \
+    "./landrun --log-level error --unrestricted-network --connect-tcp 443 -- true" \
+    125
 
 run_test "FS restricted with net and scoped unrestricted" \
     "./landrun --log-level debug --unrestricted-network --unrestricted-scoped --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- cat $RO_DIR/test.txt" \

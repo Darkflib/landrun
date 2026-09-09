@@ -94,12 +94,12 @@ enforced.
 
 Tracked as LL-005.
 
-- Reject a rule flag combined with the matching `--unrestricted-*` flag instead
+- [x] Reject a rule flag combined with the matching `--unrestricted-*` flag instead
   of dropping the rule and exiting 0.
-- Cover `--ro`, `--rw`, `--rox`, `--rwx` and `--unix` against
+- [x] Cover `--ro`, `--rw`, `--rox`, `--rwx` and `--unix` against
   `--unrestricted-filesystem`, and `--bind-tcp` and `--connect-tcp` against
   `--unrestricted-network`.
-- Route the failure through the launcher/configuration error code.
+- [x] Route the failure through the launcher/configuration error code.
 
 Acceptance gate: no combination of flags starts the target having silently
 discarded a rule the caller asked for.
