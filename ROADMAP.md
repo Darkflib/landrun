@@ -79,11 +79,11 @@ Acceptance gate: invalid input cannot silently produce a different policy.
 
 ### Make ABI negotiation fail closed for requested controls
 
-- Add `landrun --probe` with human-readable and machine-readable output.
-- Compute the minimum ABI required by the selected options.
-- Reject unsupported explicitly requested features, including under
+- [x] Add `landrun --probe` with human-readable and machine-readable output.
+- [x] Compute the minimum ABI required by the selected options.
+- [x] Reject unsupported explicitly requested features, including under
   `--best-effort`.
-- Print or expose the effective ABI and enforced rights in debug output.
+- [x] Print or expose the effective ABI and enforced rights in debug output.
 - Add ABI-boundary tests for filesystem truncation, TCP, device IOCTL, scopes,
   audit controls, and pathname UNIX sockets.
 
