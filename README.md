@@ -17,6 +17,9 @@ It's lightweight, auditable, and wraps Landlock up to v9 features (file access, 
 > [hardening roadmap](ROADMAP.md). Report suspected vulnerabilities through the
 > [security policy](SECURITY.md).
 
+User-visible policy and compatibility changes are recorded in the
+[changelog](CHANGELOG.md).
+
 ## Features
 
 - 🔒 Kernel-level security using Landlock (up to ABI v9; ABI v10 UDP controls are not enabled)
