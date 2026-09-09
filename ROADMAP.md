@@ -154,7 +154,7 @@ behavior, negative tests, and documented limitations.
   artifacts.
 - Generate artifacts only from protected tags after all required checks pass.
 - Document which source revision and Go toolchain produced each artifact.
-- Maintain a changelog that calls out changes to policy semantics and minimum
+- [x] Maintain a changelog that calls out changes to policy semantics and minimum
   ABI requirements.
 
 Acceptance gate: users can verify an artifact and understand its exact security
