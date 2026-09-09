@@ -139,7 +139,8 @@ landrun [options] <command> [args...]
 - `LANDRUN_LOG_LEVEL`: Set logging level (error, info, debug)
 
 Debug logging prints the normalized requested policy followed by a structured
-`Effective Landlock policy` record after successful enforcement. The record
+`Effective Landlock policy` record after successful enforcement, or after an
+intentional all-unrestricted no-op evaluation (`applied:false`). The record
 distinguishes the running kernel ABI from the policy ABI and lists the access
 rights and scopes actually handled after best-effort downgrading. `policy_abi`
 is the lowest ABI that describes those handled rights, scopes, and audit flags;
