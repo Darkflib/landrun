@@ -135,8 +135,10 @@ inferred from a single current kernel.
 - [x] Evaluate ABI 10 UDP bind/connect-send support and its ephemeral-port rules;
   the dependency is upgraded, but UDP controls remain disabled until landrun has
   an explicit, validated policy contract for them.
-- Track new filesystem and network access rights without enabling them
-  implicitly in existing policy profiles.
+- [x] Track new filesystem and network access rights without enabling them
+  implicitly in existing policy profiles. Exact handled-access sets and the
+  maximum public policy ABI are pinned by unit and UML tests; the update process
+  is documented in [ABI testing](docs/abi-testing.md#reviewing-new-rights-and-abis).
 - Add policy-file support only after the CLI policy contract is stable.
 - [x] Add audit-log guidance and diagnostics without requiring privileged
   access. Landrun's effective-policy record reports applied audit flags; the
