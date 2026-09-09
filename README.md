@@ -18,7 +18,7 @@ It's lightweight, auditable, and wraps Landlock up to v9 features (file access, 
 
 ## Features
 
-- 🔒 Kernel-level security using Landlock (up to ABI v9)
+- 🔒 Kernel-level security using Landlock (up to ABI v9; ABI v10 UDP controls are not enabled)
 - 🚀 Lightweight and fast execution
 - 🛡️ Fine-grained access control for directories and files
 - 🔄 Support for read and write paths
@@ -414,7 +414,7 @@ If you receive "permission denied" or similar errors:
 
 ### Implementation
 
-This project uses the [landlock-lsm/go-landlock](https://github.com/landlock-lsm/go-landlock) package (v0.9.0) for sandboxing, which provides filesystem, network and IPC-scope restrictions. The current implementation targets Landlock ABI v9 and supports:
+This project uses the [landlock-lsm/go-landlock](https://github.com/landlock-lsm/go-landlock) package (v0.10.0) for sandboxing, which provides filesystem, network and IPC-scope restrictions. The current implementation intentionally targets Landlock ABI v9 and supports:
 
 - Read/write/execute restrictions for files and directories
 - TCP port binding restrictions
@@ -424,6 +424,10 @@ This project uses the [landlock-lsm/go-landlock](https://github.com/landlock-lsm
 - Audit logging configuration for Landlock denials (`--log-*`)
 - Graceful handling of missing paths (`--ignore-missing`)
 - Best-effort mode for graceful degradation on older kernels
+
+The dependency also supports Landlock ABI v10 UDP bind/connect-send controls,
+but landrun does not expose those controls yet; UDP remains unrestricted by
+landrun's network policy.
 
 ### Best-Effort Mode
 

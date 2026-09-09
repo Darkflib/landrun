@@ -106,7 +106,7 @@ discarded a rule the caller asked for.
 
 ## Milestone 2: Strengthen compatibility and coverage
 
-- Upgrade to the current `go-landlock` release after reviewing its ABI changes.
+- [x] Upgrade to the current `go-landlock` release after reviewing its ABI changes.
 - Add controlled tests for ABI 4, 6, 9, and the newest supported ABI using VMs
   or dedicated runners; hosted-runner kernel versions are not a sufficient
   compatibility matrix.
@@ -130,7 +130,9 @@ inferred from a single current kernel.
 
 ## Milestone 3: Expand supported Landlock controls
 
-- Evaluate ABI 10 UDP bind/connect-send support and its ephemeral-port rules.
+- [x] Evaluate ABI 10 UDP bind/connect-send support and its ephemeral-port rules;
+  the dependency is upgraded, but UDP controls remain disabled until landrun has
+  an explicit, validated policy contract for them.
 - Track new filesystem and network access rights without enabling them
   implicitly in existing policy profiles.
 - Add policy-file support only after the CLI policy contract is stable.

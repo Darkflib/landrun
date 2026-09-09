@@ -176,8 +176,9 @@ const fullFSAccess = landlock.AccessFSSet(
 		syscall.AccessFSResolveUnix,
 )
 
-// fullNetAccess is the union of every network access right supported by
-// Landlock V9 (available since V4).
+// fullNetAccess intentionally includes only the classic TCP rights. The
+// go-landlock V10 dependency knows about UDP rights, but landrun does not
+// expose UDP policy flags yet and must not enable them implicitly.
 const fullNetAccess = landlock.AccessNetSet(
 	syscall.AccessNetBindTCP | syscall.AccessNetConnectTCP,
 )
