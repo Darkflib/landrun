@@ -120,6 +120,13 @@ echo "echo 'executable content'" >> "$EXEC_DIR/test.sh"
 chmod +x "$EXEC_DIR/test.sh"
 cp $EXEC_DIR/test.sh $EXEC_DIR/test2.sh
 
+# Use copied ELF binaries for direct execution-permission tests. Landrun
+# deliberately rejects direct shebang targets so its internal executable
+# descriptor never becomes an inherited capability.
+TRUE_BIN=$(type -P true)
+cp "$TRUE_BIN" "$EXEC_DIR/test-bin"
+cp "$TRUE_BIN" "$EXEC_DIR/test2-bin"
+
 cp "$RO_DIR/test.txt" "$RO_DIR_NESTED_RO/test.txt"
 cp "$RO_DIR/test.txt" "$RW_DIR_NESTED_RO/test.txt"
 
@@ -132,11 +139,13 @@ cp "$EXEC_DIR/test.sh" "$RO_DIR_NESTED_RO/test.sh"
 cp "$EXEC_DIR/test.sh" "$RW_DIR_NESTED_RO/test.sh"
 cp "$EXEC_DIR/test.sh" "$RO_DIR_NESTED_RW/test.sh"
 cp "$EXEC_DIR/test.sh" "$RW_DIR_NESTED_RW/test.sh"
+cp "$TRUE_BIN" "$RO_DIR_NESTED_EXEC/test-bin"
 
 # Create a script in RW dir to test execution in RW dirs
 echo "#!/bin/bash" > "$RW_DIR/rw_script.sh"
 echo "echo 'this script is in a read-write directory'" >> "$RW_DIR/rw_script.sh"
 chmod +x "$RW_DIR/rw_script.sh"
+cp "$TRUE_BIN" "$RW_DIR/rw-bin"
 
 # Probe Landlock ABI using the artifact under test. A failed probe is a test
 # setup error, not ABI zero: silently treating it as zero can invert checks.
@@ -237,19 +246,19 @@ run_test "No write access to read-only directory" \
 
 # Executable permission tests
 run_test "Execute access with rox flag" \
-    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR -- $EXEC_DIR/test.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR -- $EXEC_DIR/test-bin" \
     0
 
 run_test "Execute access with rox flag on file" \
-    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR/test.sh -- $EXEC_DIR/test.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR/test-bin -- $EXEC_DIR/test-bin" \
     0
 
 run_test "Execute access with rox flag on a file that is executable in same directory that one is allowed" \
-    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR/test.sh -- $EXEC_DIR/test2.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR/test-bin -- $EXEC_DIR/test2-bin" \
     125
 
 run_test "Execute a file with --add-exec flag" \
-    "./landrun --log-level debug --add-exec --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR/test.sh -- $EXEC_DIR/test2.sh" \
+    "./landrun --log-level debug --add-exec --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR/test-bin -- $EXEC_DIR/test2-bin" \
     0
 
 run_test "Execute a file with --add-exec and --ldd flag" \
@@ -274,16 +283,24 @@ run_test "Standard descriptor cannot be listed as preserved" \
 
 
 run_test "No execute access with just ro flag" \
-    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $EXEC_DIR -- $EXEC_DIR/test.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $EXEC_DIR -- $EXEC_DIR/test-bin" \
     125
 
 run_test "Execute access in read-write directory" \
-    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rwx $RW_DIR -- $RW_DIR/rw_script.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rwx $RW_DIR -- $RW_DIR/rw-bin" \
     0
 
 run_test "No execute access in read-write directory without rwx" \
-    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rw $RW_DIR -- $RW_DIR/rw_script.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rw $RW_DIR -- $RW_DIR/rw-bin" \
     125
+
+run_test "Direct shebang target fails closed" \
+    "./landrun --log-level error --rox /usr --ro $SYSTEM_LIB_DIRS --rox $EXEC_DIR/test.sh -- $EXEC_DIR/test.sh" \
+    125
+
+run_test "Shebang script runs through explicit interpreter" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $EXEC_DIR/test.sh -- /bin/bash $EXEC_DIR/test.sh" \
+    0
 
 # Directory traversal tests
 run_test "Directory traversal with root access" \
@@ -467,11 +484,10 @@ run_test "LANDRUN_LOG_LEVEL env smoke" \
 
 # --- Filesystem edge cases ---
 # Create a dedicated rwx file for single-file exec tests
-cp "$RW_DIR/rw_script.sh" "$RW_DIR/rwx_file.sh"
-chmod +x "$RW_DIR/rwx_file.sh"
+cp "$TRUE_BIN" "$RW_DIR/rwx-file"
 
 run_test "rwx on a single file allows execution" \
-    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rwx $RW_DIR/rwx_file.sh -- $RW_DIR/rwx_file.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rwx $RW_DIR/rwx-file -- $RW_DIR/rwx-file" \
     0
 
 run_test "Overwrite of read-only file is denied" \
@@ -491,11 +507,11 @@ run_test "Delete file under ro is denied" \
     1
 
 run_test "Execute from nested exec dir under ro parent" \
-    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rox $RO_DIR_NESTED_EXEC -- $RO_DIR_NESTED_EXEC/test.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --rox $RO_DIR_NESTED_EXEC -- $RO_DIR_NESTED_EXEC/test-bin" \
     0
 
 run_test "Execute denied from nested exec dir with only ro parent" \
-    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- $RO_DIR_NESTED_EXEC/test.sh" \
+    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- $RO_DIR_NESTED_EXEC/test-bin" \
     125
 
 run_test "ldd without add-exec still resolves libraries for true" \

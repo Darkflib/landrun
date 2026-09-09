@@ -50,10 +50,11 @@ entries may also need explicit `--rox` rules.
 
 Landrun opens the resolved command before applying Landlock and executes that
 descriptor with `execveat(2)`. This prevents a writable directory or another
-actor from replacing the command between policy construction and launch. A
-script is handed to its shebang interpreter through the same opened descriptor;
-for the strongest policy, invoke a trusted interpreter explicitly and grant its
-path with `--rox`.
+actor from replacing the command between policy construction and launch.
+Direct shebang scripts are rejected: the kernel requires their command
+descriptor to remain open for the interpreter, which would turn an internal
+descriptor into an unlisted capability. Invoke a trusted interpreter
+explicitly, grant its path with `--rox`, and grant the script read access.
 
 ### Work in one writable directory
 

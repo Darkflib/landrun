@@ -44,18 +44,8 @@ func RunFile(file *os.File, args, env []string) error {
 		return err
 	}
 	errno := execveat(file, argv, envp, path)
-	// The kernel's shebang handler needs to reopen the script through the
-	// descriptor. Retry once without close-on-exec for scripts; ELF binaries
-	// take the first path and never expose the launcher's descriptor.
 	if errno == syscall.ENOENT {
-		flags, err := unix.FcntlInt(file.Fd(), unix.F_GETFD, 0)
-		if err != nil {
-			return err
-		}
-		if _, err := unix.FcntlInt(file.Fd(), unix.F_SETFD, flags&^unix.FD_CLOEXEC); err != nil {
-			return err
-		}
-		errno = execveat(file, argv, envp, path)
+		return fmt.Errorf("execute opened target: %w; direct shebang scripts are unsupported, invoke the interpreter explicitly", errno)
 	}
 	if errno != 0 {
 		return errno

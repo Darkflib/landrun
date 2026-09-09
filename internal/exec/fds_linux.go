@@ -11,6 +11,14 @@ import (
 
 const firstNonStandardFD = 3
 
+// ValidateInheritedDescriptors checks the caller's preserve list before the
+// launcher opens any of its own descriptors. This prevents a closed requested
+// number from being accidentally satisfied by launcher setup.
+func ValidateInheritedDescriptors(preserve []int) error {
+	_, err := validatePreservedDescriptors(preserve)
+	return err
+}
+
 // PrepareInheritedDescriptors marks every descriptor above stderr close-on-exec,
 // then explicitly preserves the validated descriptors requested by the user.
 // It must run immediately before exec so descriptors opened by launcher setup
