@@ -123,7 +123,7 @@ discarded a rule the caller asked for.
 - Lint the security-relevant surfaces in CI: `shellcheck` on `test.sh` and
   `actionlint` on the workflows.
 - [x] Add race testing where it is compatible with the Landlock test harness.
-- Record kernel ABI and effective policy in CI output.
+- [x] Record kernel ABI and effective policy in CI output.
 
 Acceptance gate: compatibility behavior is tested at feature boundaries, not
 inferred from a single current kernel.

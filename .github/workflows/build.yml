@@ -53,6 +53,15 @@ jobs:
           echo "$binary_info"
           grep -q "statically linked" <<<"$binary_info"
 
+      - name: Record Landlock ABI and effective policy
+        run: |
+          ./landrun --probe-json
+          policy_output="$(./landrun --log-level debug --best-effort --rox ./landrun -- ./landrun --probe 2>&1)"
+          echo "$policy_output"
+          grep -Fq 'Effective Landlock policy: {"applied":true' <<<"$policy_output"
+          grep -Eq '"kernel_abi":[1-9][0-9]*' <<<"$policy_output"
+          grep -Fq '"handled_network_rights":["bind_tcp","connect_tcp"]' <<<"$policy_output"
+
       - name: Run offline integration tests against artifact
         run: ./test.sh --no-build --keep-binary --offline
 
