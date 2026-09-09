@@ -58,8 +58,7 @@ print_error() {
 if [ "$USE_SYSTEM_BINARY" = false ]; then
 	if [ "$NO_BUILD" = false ]; then
 		print_status "Building landrun binary..."
-		go build -o landrun cmd/landrun/main.go
-		if [ $? -ne 0 ]; then
+		if ! go build -o landrun cmd/landrun/main.go; then
 			print_error "Failed to build landrun binary"
 			exit 1
 		fi
@@ -171,7 +170,7 @@ run_test() {
     eval "$cmd"
     local exit_code=$?
     
-    if [ $exit_code -eq $expected_exit ]; then
+    if [ "$exit_code" -eq "$expected_exit" ]; then
         print_success "Test passed: $name"
         return 0
     else
@@ -194,7 +193,7 @@ run_test_strict() {
     eval "$cmd"
     local exit_code=$?
 
-    if [ $exit_code -eq $expected_exit ]; then
+    if [ "$exit_code" -eq "$expected_exit" ]; then
         print_success "Test passed: $name"
         return 0
     else
@@ -401,7 +400,7 @@ if [ "$LANDLOCK_ABI" -ge 9 ]; then
     UNIX_LISTENER_LOG="$TEST_DIR/unix-listener.log"
     /usr/bin/python3 -c "import socket,sys; p='$UNIX_ALLOWED'; s=socket.socket(socket.AF_UNIX); s.bind(p); s.listen(1); print('ready', flush=True); c,_=s.accept(); c.close(); s.close()" >"$UNIX_LISTENER_LOG" 2>&1 &
     UNIX_LISTENER_PID=$!
-    for i in 1 2 3 4 5 6 7 8 9 10; do
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
         if grep -q ready "$UNIX_LISTENER_LOG" 2>/dev/null; then break; fi
         sleep 0.1
     done
@@ -415,7 +414,7 @@ if [ "$LANDLOCK_ABI" -ge 9 ]; then
     UNIX_DENIED_LOG="$TEST_DIR/unix-denied-listener.log"
     /usr/bin/python3 -c "import socket,sys; p='$UNIX_DENIED'; s=socket.socket(socket.AF_UNIX); s.bind(p); s.listen(1); print('ready', flush=True); c,_=s.accept(); c.close(); s.close()" >"$UNIX_DENIED_LOG" 2>&1 &
     UNIX_DENIED_PID=$!
-    for i in 1 2 3 4 5 6 7 8 9 10; do
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
         if grep -q ready "$UNIX_DENIED_LOG" 2>/dev/null; then break; fi
         sleep 0.1
     done
@@ -574,7 +573,7 @@ s.close()
 " > "$TEST_DIR/listener.out" 2>&1 &
 LISTENER_PID=$!
 # Wait until listener is ready
-for i in 1 2 3 4 5 6 7 8 9 10; do
+for _ in 1 2 3 4 5 6 7 8 9 10; do
     if grep -q ready "$TEST_DIR/listener.out" 2>/dev/null; then break; fi
     sleep 0.1
 done
