@@ -30,8 +30,8 @@ the runner-supplied ABI and checkout path in `/proc/cmdline`, accepts only the
 four ABIs in the matrix, and makes a fixed, unprivileged call to the
 repository-owned boundary-test script. Parsing the boot arguments avoids
 depending on systemd to forward the host working directory or custom ABI
-environment. The command-line read accepts an EOF without a trailing newline,
-as emitted by some UML kernels. The patch also uses the absolute system
+environment. A Bash here-string normalizes kernels that expose the command line
+without a trailing newline. The patch also uses the absolute system
 poweroff path because the guest inherits a deliberately narrow host `PATH`.
 
 The UML harness currently produces x86_64 kernels, so this compatibility matrix
