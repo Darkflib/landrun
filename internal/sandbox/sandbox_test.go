@@ -226,6 +226,28 @@ func TestValidateConfigRejectsEmptyPaths(t *testing.T) {
 	}
 }
 
+func TestRequiredABI(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want int
+	}{
+		{name: "empty", want: 0},
+		{name: "read-only path", cfg: Config{ReadOnlyPaths: []string{"/tmp"}}, want: 1},
+		{name: "read-write path", cfg: Config{ReadWritePaths: []string{"/tmp"}}, want: 3},
+		{name: "TCP", cfg: Config{ConnectTCPPorts: []int{443}}, want: 4},
+		{name: "audit logging", cfg: Config{EnableLogSubprocesses: true}, want: 7},
+		{name: "UNIX socket", cfg: Config{UnixSocketPaths: []string{"/run/app.sock"}}, want: 9},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := RequiredABI(tc.cfg); got != tc.want {
+				t.Fatalf("RequiredABI returned %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestApplyValidatesBeforeUnrestrictedNoOp(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -361,10 +383,6 @@ func TestApplyHelperNetAndFlags(t *testing.T) {
 		t.Skip("subprocess helper")
 	}
 	dir := t.TempDir()
-	sock := filepath.Join(dir, "app.sock")
-	if err := os.WriteFile(sock, []byte{}, 0644); err != nil {
-		t.Fatal(err)
-	}
 	rwFile := filepath.Join(dir, "rw.txt")
 	if err := os.WriteFile(rwFile, []byte("x"), 0644); err != nil {
 		t.Fatal(err)
@@ -375,14 +393,18 @@ func TestApplyHelperNetAndFlags(t *testing.T) {
 		ReadWritePaths:           []string{rwFile},
 		ReadOnlyExecutablePaths:  []string{"/usr"},
 		ReadWriteExecutablePaths: []string{rwFile},
-		UnixSocketPaths:          []string{sock, dir},
 		BindTCPPorts:             []int{18080},
 		ConnectTCPPorts:          []int{443},
 		DisableLogOriginating:    true,
 		EnableLogSubprocesses:    true,
 		DisableLogSubdomains:     true,
 	})
-	if err != nil {
+	abi, probeErr := Probe()
+	if probeErr == nil && abi < 7 {
+		if err == nil {
+			t.Fatalf("expected audit controls to be rejected on ABI %d", abi)
+		}
+	} else if err != nil {
 		t.Fatalf("Apply net/flags failed: %v", err)
 	}
 	os.Exit(0)

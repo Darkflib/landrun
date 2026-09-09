@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -40,6 +41,14 @@ func newCommand() *cli.Command {
 		Usage:   "Run a command in a Landlock sandbox",
 		Version: Version,
 		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:  "probe",
+				Usage: "Report the running kernel's Landlock ABI and exit",
+			},
+			&cli.BoolFlag{
+				Name:  "probe-json",
+				Usage: "Report the running kernel's Landlock ABI as JSON and exit",
+			},
 			&cli.StringFlag{
 				Name:    "log-level",
 				Usage:   "Set logging level (error, info, debug)",
@@ -140,6 +149,9 @@ func newCommand() *cli.Command {
 			return ctx, nil
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
+			if c.Bool("probe") || c.Bool("probe-json") {
+				return reportProbe(c.Bool("probe-json"))
+			}
 			args := c.Args().Slice()
 			if len(args) == 0 {
 				return errors.New("missing command to run")
@@ -213,6 +225,35 @@ func newCommand() *cli.Command {
 			return nil
 		},
 	}
+}
+
+func reportProbe(asJSON bool) error {
+	abi, err := sandbox.Probe()
+	if asJSON {
+		result := struct {
+			ABI       int    `json:"abi"`
+			Supported bool   `json:"supported"`
+			Error     string `json:"error,omitempty"`
+		}{ABI: abi, Supported: err == nil && abi > 0}
+		if err != nil {
+			result.Error = err.Error()
+		}
+		encoded, marshalErr := json.Marshal(result)
+		if marshalErr != nil {
+			return fmt.Errorf("encode Landlock probe result: %w", marshalErr)
+		}
+		fmt.Println(string(encoded))
+		if err != nil {
+			return fmt.Errorf("Landlock is unavailable: %w", err)
+		}
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("Landlock is unavailable: %w", err)
+	}
+	fmt.Printf("Landlock ABI: %d\n", abi)
+	return nil
 }
 
 // processEnvironmentVars processes the env flag values

@@ -29,6 +29,33 @@ type Config struct {
 	DisableLogSubdomains  bool
 }
 
+// Probe returns the highest Landlock ABI supported by the running kernel.
+func Probe() (int, error) {
+	return syscall.LandlockGetABIVersion()
+}
+
+// RequiredABI returns the minimum ABI needed for explicitly requested policy
+// controls. An empty policy has no explicit feature requirement.
+func RequiredABI(cfg Config) int {
+	required := 0
+	if len(cfg.ReadOnlyPaths)+len(cfg.ReadOnlyExecutablePaths) > 0 {
+		required = max(required, 1)
+	}
+	if len(cfg.ReadWritePaths)+len(cfg.ReadWriteExecutablePaths) > 0 {
+		required = max(required, 3)
+	}
+	if len(cfg.BindTCPPorts)+len(cfg.ConnectTCPPorts) > 0 {
+		required = max(required, 4)
+	}
+	if len(cfg.UnixSocketPaths) > 0 {
+		required = max(required, 9)
+	}
+	if cfg.DisableLogOriginating || cfg.EnableLogSubprocesses || cfg.DisableLogSubdomains {
+		required = max(required, 7)
+	}
+	return required
+}
+
 const maxTCPPort = 65535
 
 // ValidateConfig validates and normalizes a sandbox policy before it is used.
@@ -268,6 +295,15 @@ func Apply(cfg Config) error {
 	cfg, err = ValidateConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("invalid sandbox policy: %w", err)
+	}
+	if required := RequiredABI(cfg); required > 0 {
+		available, probeErr := Probe()
+		if probeErr != nil {
+			return fmt.Errorf("cannot enforce explicitly requested Landlock controls (minimum ABI %d): %w", required, probeErr)
+		}
+		if available < required {
+			return fmt.Errorf("cannot enforce explicitly requested Landlock controls: minimum ABI %d, kernel ABI %d", required, available)
+		}
 	}
 
 	log.Info("Sandbox config: %+v", cfg)

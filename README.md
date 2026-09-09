@@ -114,6 +114,8 @@ landrun [options] <command> [args...]
 - `--log-disable-subdomains`: Disable audit logging of denials from nested Landlock domains (Landlock ABI v7+)
 - `--add-exec`: Automatically adds the executing binary to --rox
 - `--ldd`: Automatically adds required libraries to --rox
+- `--probe`: Report the running kernel's highest supported Landlock ABI and exit
+- `--probe-json`: Report the Landlock ABI as machine-readable JSON and exit
 
 ### Important Notes
 
@@ -125,6 +127,7 @@ landrun [options] <command> [args...]
 - Standard input, output, and error are inherited. All other open file descriptors are closed on `exec` unless explicitly listed with `--preserve-fd`
 - Invalid policy and launcher/setup failures exit with status 125. Once the command is executed, its own exit status is preserved
 - A rule flag cannot be combined with its matching unrestricted-domain flag; for example, use either `--connect-tcp` rules or `--unrestricted-network`, not both
+- Explicit controls that require a newer Landlock ABI fail with status 125 even under `--best-effort`; the probe commands show the ABI available on the current kernel
 - The `--best-effort` flag allows graceful degradation on older kernels that don't support all requested restrictions. Because the default target is Landlock ABI v9, you will usually want `--best-effort` unless you are on a very recent kernel
 - Paths can be specified either using multiple flags or as comma-separated values (e.g., `--ro /usr,/lib,/home`)
 - If no paths or network rules are specified and neither `--unrestricted-filesystem` nor `--unrestricted-network` is set, landrun applies the maximum filesystem and network restrictions supported by the selected Landlock ABI; IPC scoping is governed separately by `--unrestricted-scoped` (see the next point), and operations outside Landlock's scope remain unaffected
@@ -368,7 +371,7 @@ These are restricted by default and can be relaxed with `--unrestricted-scoped`.
 - Network restrictions require Linux kernel 6.7 or later with Landlock ABI v4
 - TCP restrictions only apply to "classic" TCP sockets, not Multipath TCP. Since Go 1.24, `net.Listen` defaults to Multipath TCP and therefore cannot currently be restricted by Landlock (kernel bug [landlock-lsm/linux#54](https://github.com/landlock-lsm/linux/issues/54))
 - This version does not restrict UDP traffic
-- `--best-effort` may drop controls that the running kernel ABI does not support; it does not currently report the effective policy
+- `--best-effort` may still omit unrequested higher-ABI coverage, but it will not drop an explicitly requested path, TCP, UNIX-socket, or audit-logging control
 - `--ldd` resolves dependencies without executing `ldconfig` or another helper; it fails closed if a library is only discoverable through a non-standard loader-cache entry
 - Some operations may require additional permissions
 - Files, directories, and sockets intentionally preserved with `--preserve-fd` are not retroactively restricted by Landlock

@@ -120,12 +120,15 @@ Recommended remediation:
 Severity: Medium, rising to High when callers treat successful startup as proof
 that every requested restriction is active.
 
-Status: Open.
+Status: Partially remediated in this change. `--probe` and `--probe-json` expose
+the kernel ABI, and explicitly requested controls now fail closed under
+`--best-effort` when that ABI is too old. The ABI-boundary matrix and complete
+effective-policy report remain open.
 
-The default policy targets Landlock ABI 9. On an older kernel, `--best-effort`
-downgrades the configuration and may remove access rights explicitly requested
-on the command line. The command still starts without reporting the effective
-policy.
+The default policy still targets Landlock ABI 9. On an older kernel,
+`--best-effort` may downgrade unrequested maximum-coverage rights, but explicit
+controls are checked against the running ABI before launch. The effective
+configuration is included in debug output.
 
 On a host with Landlock ABI 6, a policy containing `--unix allowed.sock`
 successfully connected to a different pathname UNIX socket. ABI 6 cannot

@@ -134,9 +134,19 @@ echo "#!/bin/bash" > "$RW_DIR/rw_script.sh"
 echo "echo 'this script is in a read-write directory'" >> "$RW_DIR/rw_script.sh"
 chmod +x "$RW_DIR/rw_script.sh"
 
-# Probe Landlock ABI version (0 if unavailable). Used by strict-mode tests.
-LANDLOCK_ABI=$(go run github.com/landlock-lsm/go-landlock/cmd/landlock-abi-version@v0.9.0 2>/dev/null || echo 0)
-LANDLOCK_ABI=$(echo "$LANDLOCK_ABI" | tr -d '[:space:]')
+# Probe Landlock ABI using the artifact under test. A failed probe is a test
+# setup error, not ABI zero: silently treating it as zero can invert checks.
+LANDRUN_CMD="./landrun"
+if [ "$USE_SYSTEM_BINARY" = true ]; then
+    LANDRUN_CMD="landrun"
+fi
+LANDLOCK_PROBE=$("$LANDRUN_CMD" --probe-json 2>/dev/null)
+LANDLOCK_PROBE_STATUS=$?
+LANDLOCK_ABI=$(printf '%s\n' "$LANDLOCK_PROBE" | sed -n 's/.*"abi":\([0-9][0-9]*\).*/\1/p')
+if [ $LANDLOCK_PROBE_STATUS -ne 0 ] || [ -z "$LANDLOCK_ABI" ] || ! printf '%s\n' "$LANDLOCK_PROBE" | grep -q '"supported":true'; then
+    print_error "Landlock ABI probe failed: ${LANDLOCK_PROBE:-no output}"
+    exit 1
+fi
 print_status "Detected Landlock ABI: ${LANDLOCK_ABI}"
 
 # Function to run a test case
@@ -384,9 +394,13 @@ run_test "Unrestricted IPC scoping smoke test" \
     "./landrun --log-level debug --unrestricted-scoped --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- cat $RO_DIR/test.txt" \
     0
 
-run_test "UNIX socket path allowed with --unix" \
-    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --unix $RO_DIR/test.txt -- cat $RO_DIR/test.txt" \
-    0
+if [ "$LANDLOCK_ABI" -ge 9 ]; then
+    run_test "UNIX socket path allowed with --unix" \
+        "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --unix $RO_DIR/test.txt -- cat $RO_DIR/test.txt" \
+        0
+else
+    print_status "Skipping pathname UNIX socket test (kernel ABI < 9)"
+fi
 
 # --- CLI / startup edge cases ---
 run_test "Missing command to run" \
@@ -592,13 +606,21 @@ run_test "FS restricted with net and scoped unrestricted" \
     0
 
 # --- V6-V9 flag smokes ---
-run_test "Audit log flags smoke with best-effort" \
-    "./landrun --log-level debug --log-disable-originating --log-enable-subprocesses --log-disable-subdomains --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- cat $RO_DIR/test.txt" \
-    0
+if [ "$LANDLOCK_ABI" -ge 7 ]; then
+    run_test "Audit log flags smoke with best-effort" \
+        "./landrun --log-level debug --log-disable-originating --log-enable-subprocesses --log-disable-subdomains --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- cat $RO_DIR/test.txt" \
+        0
+else
+    print_status "Skipping audit-log test (kernel ABI < 7)"
+fi
 
-run_test "unix on a directory path" \
-    "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --unix $RO_DIR -- cat $RO_DIR/test.txt" \
-    0
+if [ "$LANDLOCK_ABI" -ge 9 ]; then
+    run_test "unix on a directory path" \
+        "./landrun --log-level debug --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR --unix $RO_DIR -- cat $RO_DIR/test.txt" \
+        0
+else
+    print_status "Skipping pathname UNIX directory test (kernel ABI < 9)"
+fi
 
 # --- Strict mode (no --best-effort) ---
 if [ "$LANDLOCK_ABI" -lt 9 ] 2>/dev/null; then
