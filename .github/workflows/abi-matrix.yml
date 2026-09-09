@@ -114,8 +114,14 @@ jobs:
           fetch-depth: '1'
           persist-credentials: false
 
-      - name: Limit UML guest to required filesystems
-        run: git -C landlock-test-tools apply ../ci/landlock-test-tools-minimal.patch
+      - name: Configure minimal UML guest
+        run: |
+          git -C landlock-test-tools apply ../ci/landlock-test-tools-minimal.patch
+          service=landlock-test-tools/guest/systemd/landlock-test.service
+          guest_init="${PWD}/landlock-test-tools/guest/init.sh"
+          exec_start="ExecStart=bash ${guest_init} ${{ matrix.abi }} ${PWD}"
+          sed -i "s|^ExecStart=.*$|${exec_start}|" "${service}"
+          grep -Fqx -- "${exec_start}" "${service}"
 
       - name: Restore UML kernel
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
@@ -137,5 +143,4 @@ jobs:
       - name: Test ABI boundary and policy behavior
         run: |
           timeout --signal=TERM --kill-after=30s 15m \
-            ./landlock-test-tools/uml-run.sh ./linux-${{ matrix.version }} \
-            LANDRUN_TEST_ABI=${{ matrix.abi }} -- true
+            ./landlock-test-tools/uml-run.sh ./linux-${{ matrix.version }} -- true
