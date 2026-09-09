@@ -20,6 +20,11 @@ requires the exact expected ABI before it exercises effective-policy reporting,
 strict compatibility failures, explicit audit controls, and the offline
 integration suite.
 
+The upstream guest init opportunistically uses `bindfs` when it is executable
+on the host. The light kernels do not need or enable that optional FUSE fixture,
+so the workflow disables the helper on the ephemeral runner before boot. This
+keeps an unrelated host-image package from changing the guest test setup.
+
 The UML harness currently produces x86_64 kernels, so this compatibility matrix
 runs on amd64. The regular build and integration workflows separately compile
 and test the native static artifact on both amd64 and arm64. Other architectures

@@ -131,6 +131,12 @@ jobs:
           CGO_ENABLED: "0"
         run: go build -trimpath -o landrun ./cmd/landrun
 
+      - name: Disable unused optional bindfs fixture
+        run: |
+          if bindfs_path="$(command -v bindfs)"; then
+            sudo chmod a-x "$bindfs_path"
+          fi
+
       - name: Test ABI boundary and policy behavior
         run: |
           timeout --signal=TERM --kill-after=30s 15m \
