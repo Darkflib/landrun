@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -27,6 +28,31 @@ type Config struct {
 	DisableLogOriginating bool
 	EnableLogSubprocesses bool
 	DisableLogSubdomains  bool
+}
+
+// EffectivePolicy describes the access families the running kernel actually
+// enforces after best-effort ABI downgrading. PolicyABI is the lowest ABI that
+// fully describes the handled rights, scopes, and audit flags; enforcement
+// improvements are reported separately. The rights are handled (denied by
+// default), and individual rules in Config grant selected operations back.
+type EffectivePolicy struct {
+	Applied                 bool     `json:"applied"`
+	KernelABI               int      `json:"kernel_abi"`
+	PolicyABI               int      `json:"policy_abi"`
+	BestEffort              bool     `json:"best_effort"`
+	HandledFilesystemRights []string `json:"handled_filesystem_rights"`
+	HandledNetworkRights    []string `json:"handled_network_rights"`
+	HandledScopes           []string `json:"handled_scopes"`
+	AuditFlags              []string `json:"audit_flags"`
+	ThreadSynchronized      bool     `json:"thread_synchronized"`
+}
+
+func (p EffectivePolicy) String() string {
+	encoded, err := json.Marshal(p)
+	if err != nil {
+		return fmt.Sprintf("effective policy encoding failed: %v", err)
+	}
+	return string(encoded)
 }
 
 // Probe returns the highest Landlock ABI supported by the running kernel.
@@ -67,6 +93,10 @@ func ValidateConfig(cfg Config) (Config, error) {
 	}
 	if cfg.UnrestrictedNetwork && len(cfg.BindTCPPorts)+len(cfg.ConnectTCPPorts) > 0 {
 		return Config{}, fmt.Errorf("--unrestricted-network cannot be combined with TCP port rules")
+	}
+	if cfg.UnrestrictedFilesystem && cfg.UnrestrictedNetwork && cfg.UnrestrictedScoped &&
+		(cfg.DisableLogOriginating || cfg.EnableLogSubprocesses || cfg.DisableLogSubdomains) {
+		return Config{}, fmt.Errorf("audit logging controls require at least one restricted domain")
 	}
 
 	var err error
@@ -189,6 +219,132 @@ const fullScoped = landlock.ScopedSet(
 	syscall.ScopeAbstractUnixSocket | syscall.ScopeSignal,
 )
 
+type accessName struct {
+	bit  uint64
+	name string
+}
+
+var filesystemAccessNames = []accessName{
+	{uint64(syscall.AccessFSExecute), "execute"},
+	{uint64(syscall.AccessFSWriteFile), "write_file"},
+	{uint64(syscall.AccessFSReadFile), "read_file"},
+	{uint64(syscall.AccessFSReadDir), "read_dir"},
+	{uint64(syscall.AccessFSRemoveDir), "remove_dir"},
+	{uint64(syscall.AccessFSRemoveFile), "remove_file"},
+	{uint64(syscall.AccessFSMakeChar), "make_char"},
+	{uint64(syscall.AccessFSMakeDir), "make_dir"},
+	{uint64(syscall.AccessFSMakeReg), "make_reg"},
+	{uint64(syscall.AccessFSMakeSock), "make_sock"},
+	{uint64(syscall.AccessFSMakeFifo), "make_fifo"},
+	{uint64(syscall.AccessFSMakeBlock), "make_block"},
+	{uint64(syscall.AccessFSMakeSym), "make_sym"},
+	{uint64(syscall.AccessFSRefer), "refer"},
+	{uint64(syscall.AccessFSTruncate), "truncate"},
+	{uint64(syscall.AccessFSIoctlDev), "ioctl_dev"},
+	{uint64(syscall.AccessFSResolveUnix), "resolve_unix"},
+}
+
+var networkAccessNames = []accessName{
+	{uint64(syscall.AccessNetBindTCP), "bind_tcp"},
+	{uint64(syscall.AccessNetConnectTCP), "connect_tcp"},
+}
+
+var scopeNames = []accessName{
+	{uint64(syscall.ScopeAbstractUnixSocket), "abstract_unix_socket"},
+	{uint64(syscall.ScopeSignal), "signal"},
+}
+
+func namedAccesses(value uint64, names []accessName) []string {
+	result := make([]string, 0, len(names))
+	for _, access := range names {
+		if value&access.bit != 0 {
+			result = append(result, access.name)
+		}
+	}
+	return result
+}
+
+func filesystemRightsForABI(abi int) landlock.AccessFSSet {
+	if abi < 1 {
+		return 0
+	}
+	rights := fullFSAccess
+	if abi < 9 {
+		rights &^= landlock.AccessFSSet(syscall.AccessFSResolveUnix)
+	}
+	if abi < 5 {
+		rights &^= landlock.AccessFSSet(syscall.AccessFSIoctlDev)
+	}
+	if abi < 3 {
+		rights &^= landlock.AccessFSSet(syscall.AccessFSTruncate)
+	}
+	if abi < 2 {
+		rights &^= landlock.AccessFSSet(syscall.AccessFSRefer)
+	}
+	return rights
+}
+
+// effectivePolicyForABI is pure so ABI boundary behavior can be tested without
+// applying a process-wide Landlock domain to the test process.
+func effectivePolicyForABI(cfg Config, kernelABI int) EffectivePolicy {
+	report := EffectivePolicy{
+		KernelABI:               kernelABI,
+		BestEffort:              cfg.BestEffort,
+		HandledFilesystemRights: []string{},
+		HandledNetworkRights:    []string{},
+		HandledScopes:           []string{},
+		AuditFlags:              []string{},
+	}
+	if kernelABI < 1 || (cfg.UnrestrictedFilesystem && cfg.UnrestrictedNetwork && cfg.UnrestrictedScoped) {
+		return report
+	}
+
+	effectiveABI := min(kernelABI, 9)
+	if !cfg.UnrestrictedFilesystem {
+		fsRights := filesystemRightsForABI(effectiveABI)
+		report.HandledFilesystemRights = namedAccesses(uint64(fsRights), filesystemAccessNames)
+		switch {
+		case fsRights&landlock.AccessFSSet(syscall.AccessFSResolveUnix) != 0:
+			report.PolicyABI = max(report.PolicyABI, 9)
+		case fsRights&landlock.AccessFSSet(syscall.AccessFSIoctlDev) != 0:
+			report.PolicyABI = max(report.PolicyABI, 5)
+		case fsRights&landlock.AccessFSSet(syscall.AccessFSTruncate) != 0:
+			report.PolicyABI = max(report.PolicyABI, 3)
+		case fsRights&landlock.AccessFSSet(syscall.AccessFSRefer) != 0:
+			report.PolicyABI = max(report.PolicyABI, 2)
+		case fsRights != 0:
+			report.PolicyABI = max(report.PolicyABI, 1)
+		}
+	}
+	if !cfg.UnrestrictedNetwork && effectiveABI >= 4 {
+		report.HandledNetworkRights = namedAccesses(uint64(fullNetAccess), networkAccessNames)
+		report.PolicyABI = max(report.PolicyABI, 4)
+	}
+	if !cfg.UnrestrictedScoped && effectiveABI >= 6 {
+		report.HandledScopes = namedAccesses(uint64(fullScoped), scopeNames)
+		report.PolicyABI = max(report.PolicyABI, 6)
+	}
+
+	if report.PolicyABI > 0 && effectiveABI >= 7 {
+		if cfg.DisableLogOriginating {
+			report.AuditFlags = append(report.AuditFlags, "disable_originating")
+		}
+		if cfg.EnableLogSubprocesses {
+			report.AuditFlags = append(report.AuditFlags, "enable_subprocesses")
+		}
+		if cfg.DisableLogSubdomains {
+			report.AuditFlags = append(report.AuditFlags, "disable_subdomains")
+		}
+		if len(report.AuditFlags) > 0 {
+			report.PolicyABI = max(report.PolicyABI, 7)
+		}
+	}
+
+	report.Applied = report.PolicyABI > 0
+	report.ThreadSynchronized = report.Applied && kernelABI >= 8
+	return report
+}
+
 // getReadWriteExecutableRights returns a full set of permissions including execution
 func getReadWriteExecutableRights(dir bool) landlock.AccessFSSet {
 	accessRights := landlock.AccessFSSet(0)
@@ -297,8 +453,11 @@ func Apply(cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("invalid sandbox policy: %w", err)
 	}
+	available, probeErr := Probe()
+	if probeErr != nil {
+		available = 0
+	}
 	if required := RequiredABI(cfg); required > 0 {
-		available, probeErr := Probe()
 		if probeErr != nil {
 			return fmt.Errorf("cannot enforce explicitly requested Landlock controls (minimum ABI %d): %w", required, probeErr)
 		}
@@ -306,6 +465,7 @@ func Apply(cfg Config) error {
 			return fmt.Errorf("cannot enforce explicitly requested Landlock controls: minimum ABI %d, kernel ABI %d", required, available)
 		}
 	}
+	effectivePolicy := effectivePolicyForABI(cfg, available)
 
 	log.Info("Sandbox config: %+v", cfg)
 
@@ -335,6 +495,7 @@ func Apply(cfg Config) error {
 	// If every domain is unrestricted, there is nothing for Landlock to do.
 	if len(configArgs) == 0 {
 		log.Info("Unrestricted filesystem, network and IPC scoping enabled; no rules applied.")
+		log.Debug("Effective Landlock policy: %s", effectivePolicy)
 		return nil
 	}
 
@@ -416,11 +577,12 @@ func Apply(cfg Config) error {
 		log.Info("No rules provided; applying maximum restrictions for the handled domains.")
 	}
 
-	log.Debug("Applying Landlock restrictions: %s", llCfg.String())
+	log.Debug("Requested Landlock configuration: %s", llCfg.String())
 	if err := llCfg.Restrict(allRules...); err != nil {
 		return fmt.Errorf("failed to apply Landlock restrictions: %w", err)
 	}
 
+	log.Debug("Effective Landlock policy: %s", effectivePolicy)
 	log.Info("Landlock restrictions applied successfully")
 	return nil
 }

@@ -626,6 +626,10 @@ run_test "TCP rule rejected when network unrestricted" \
     "./landrun --log-level error --unrestricted-network --connect-tcp 443 -- true" \
     125
 
+run_test "Audit controls rejected when every domain is unrestricted" \
+    "./landrun --log-level error --unrestricted-filesystem --unrestricted-network --unrestricted-scoped --log-enable-subprocesses -- true" \
+    125
+
 run_test "FS restricted with net and scoped unrestricted" \
     "./landrun --log-level debug --unrestricted-network --unrestricted-scoped --rox /usr --ro $SYSTEM_LIB_DIRS --ro $RO_DIR -- cat $RO_DIR/test.txt" \
     0
