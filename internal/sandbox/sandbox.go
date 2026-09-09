@@ -183,9 +183,15 @@ func normalizePorts(flag string, ports []int, minimum int) ([]int, error) {
 	return normalized, nil
 }
 
-// fullFSAccess is the union of every filesystem access right supported by
-// Landlock V9. It is used as the Config's handled access set so that every
-// per-path rule we build stays within its bounds.
+// maxPolicyABI is the newest Landlock ABI whose access-control semantics are
+// part of landrun's public policy contract. A dependency or kernel ABI upgrade
+// must not change this value until new rights have explicit CLI semantics,
+// compatibility checks, negative tests, and documentation.
+const maxPolicyABI = 9
+
+// fullFSAccess is the union of every filesystem access right included in
+// landrun's maxPolicyABI contract. It is used as the Config's handled access
+// set so that every per-path rule we build stays within its bounds.
 const fullFSAccess = landlock.AccessFSSet(
 	syscall.AccessFSExecute |
 		syscall.AccessFSWriteFile |
@@ -213,8 +219,8 @@ const fullNetAccess = landlock.AccessNetSet(
 	syscall.AccessNetBindTCP | syscall.AccessNetConnectTCP,
 )
 
-// fullScoped is the union of every IPC scope supported by Landlock V9
-// (available since V6).
+// fullScoped is the union of every IPC scope included in landrun's
+// maxPolicyABI contract (available since V6).
 const fullScoped = landlock.ScopedSet(
 	syscall.ScopeAbstractUnixSocket | syscall.ScopeSignal,
 )
@@ -299,7 +305,7 @@ func effectivePolicyForABI(cfg Config, kernelABI int) EffectivePolicy {
 		return report
 	}
 
-	effectiveABI := min(kernelABI, 9)
+	effectiveABI := min(kernelABI, maxPolicyABI)
 	if !cfg.UnrestrictedFilesystem {
 		fsRights := filesystemRightsForABI(effectiveABI)
 		report.HandledFilesystemRights = namedAccesses(uint64(fsRights), filesystemAccessNames)

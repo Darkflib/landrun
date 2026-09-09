@@ -43,6 +43,9 @@ semantics, and minimum Landlock ABI changes are called out explicitly.
 - CI now tests amd64 and arm64 static builds, minimum and stable Go versions,
   race detection, security-oriented linting, vulnerability scanning, and
   pinned Landlock ABI 4, 6, 9, and 10 kernels.
+- The maximum public policy ABI and exact handled-access sets are now explicit
+  compatibility contracts, preventing dependency upgrades from silently
+  enabling new access-right families.
 
 ### Landlock compatibility
 

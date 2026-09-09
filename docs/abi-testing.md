@@ -51,3 +51,33 @@ are not release targets.
 Moving branch names and downloaded third-party kernel binaries are deliberately
 not used as test inputs. A pin update is a supply-chain change and should remain
 visible in review.
+
+## Reviewing new rights and ABIs
+
+Landrun constructs custom handled-access sets instead of selecting every right
+known to `go-landlock`. Upgrading the dependency or running on a newer kernel
+therefore must not silently widen an existing policy profile. The
+`maxPolicyABI` constant records the newest ABI whose semantics landrun exposes,
+and `TestHandledAccessSetsMatchPolicyContract` pins the exact filesystem,
+network, and scoped sets. The ABI 10 UML job also verifies that UDP remains
+absent from the effective policy.
+
+For each new Landlock ABI or dependency release:
+
+1. Inventory every new access right, scope, restrict flag, and enforcement
+   semantic in the kernel and `go-landlock` release notes.
+2. Leave new access rights out of the handled sets until landrun defines an
+   explicit policy contract. Do not infer opt-in from the dependency's maximum
+   preset.
+3. Before raising `maxPolicyABI`, add the CLI or configuration input, validation,
+   `RequiredABI` boundary, effective-policy name, and fail-closed behavior for
+   every newly exposed control.
+4. Add an exact-set unit assertion, one-below/at-boundary tests, a pinned-kernel
+   assertion, and negative tests proving existing profiles do not acquire the
+   new right implicitly.
+5. Update the README limitations, usage guidance, and changelog with any policy
+   semantic or minimum-ABI change.
+
+Kernel enforcement improvements that do not add an access right, such as TSYNC,
+and audit-selection flags are tracked separately in the effective-policy report
+and still require boundary tests before adoption.

@@ -250,13 +250,46 @@ func TestRequiredABI(t *testing.T) {
 	}
 }
 
-func TestFullNetAccessKeepsUDPUnrestricted(t *testing.T) {
+func TestHandledAccessSetsMatchPolicyContract(t *testing.T) {
+	if maxPolicyABI != 9 {
+		t.Fatalf("maxPolicyABI changed without updating this contract test: %d", maxPolicyABI)
+	}
+
+	wantFS := landlock.AccessFSSet(
+		syscall.AccessFSExecute |
+			syscall.AccessFSWriteFile |
+			syscall.AccessFSReadFile |
+			syscall.AccessFSReadDir |
+			syscall.AccessFSRemoveDir |
+			syscall.AccessFSRemoveFile |
+			syscall.AccessFSMakeChar |
+			syscall.AccessFSMakeDir |
+			syscall.AccessFSMakeReg |
+			syscall.AccessFSMakeSock |
+			syscall.AccessFSMakeFifo |
+			syscall.AccessFSMakeBlock |
+			syscall.AccessFSMakeSym |
+			syscall.AccessFSRefer |
+			syscall.AccessFSTruncate |
+			syscall.AccessFSIoctlDev |
+			syscall.AccessFSResolveUnix,
+	)
+	if fullFSAccess != wantFS {
+		t.Fatalf("fullFSAccess changed unexpectedly: got %#x, want %#x", fullFSAccess, wantFS)
+	}
+
+	wantNet := landlock.AccessNetSet(syscall.AccessNetBindTCP | syscall.AccessNetConnectTCP)
+	if fullNetAccess != wantNet {
+		t.Fatalf("fullNetAccess changed unexpectedly: got %#x, want %#x", fullNetAccess, wantNet)
+	}
 	udpRights := landlock.AccessNetSet(syscall.AccessNetBindUDP | syscall.AccessNetConnectSendUDP)
 	if fullNetAccess&udpRights != 0 {
 		t.Fatalf("fullNetAccess unexpectedly enables ABI 10 UDP rights: %#x", fullNetAccess&udpRights)
 	}
-	if fullNetAccess != landlock.AccessNetSet(syscall.AccessNetBindTCP|syscall.AccessNetConnectTCP) {
-		t.Fatalf("fullNetAccess changed unexpectedly: %#x", fullNetAccess)
+
+	wantScoped := landlock.ScopedSet(syscall.ScopeAbstractUnixSocket | syscall.ScopeSignal)
+	if fullScoped != wantScoped {
+		t.Fatalf("fullScoped changed unexpectedly: got %#x, want %#x", fullScoped, wantScoped)
 	}
 }
 
