@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	osexec "os/exec"
+	"runtime"
+	"runtime/debug"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -39,7 +41,7 @@ func newCommand() *cli.Command {
 	return &cli.Command{
 		Name:    "landrun",
 		Usage:   "Run a command in a Landlock sandbox",
-		Version: Version,
+		Version: versionString(),
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:  "probe",
@@ -234,6 +236,29 @@ func newCommand() *cli.Command {
 			return nil
 		},
 	}
+}
+
+func versionString() string {
+	goVersion := runtime.Version()
+	revision := "unknown"
+	modified := false
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if info.GoVersion != "" {
+			goVersion = info.GoVersion
+		}
+		for _, setting := range info.Settings {
+			switch setting.Key {
+			case "vcs.revision":
+				revision = setting.Value
+			case "vcs.modified":
+				modified = setting.Value == "true"
+			}
+		}
+	}
+	if modified && revision != "unknown" {
+		revision += "+modified"
+	}
+	return fmt.Sprintf("%s (revision %s, %s)", Version, revision, goVersion)
 }
 
 func reportProbe(asJSON bool) error {

@@ -63,6 +63,23 @@ go build -o landrun cmd/landrun/main.go
 sudo cp landrun /usr/local/bin/
 ```
 
+### Verify a CI artifact
+
+Each CI artifact bundle contains the static binary, its SHA-256 checksum, and
+the output of `go version -m` captured as `landrun.buildinfo`. The binary also
+reports the same source revision and Go toolchain itself:
+
+```bash
+sha256sum -c landrun.sha256
+./landrun --version
+cat landrun.buildinfo
+```
+
+The build fails if the embedded VCS revision is not the exact checked-out
+commit, if the tree is marked modified, or if the embedded Go version differs
+from the selected CI toolchain. Release artifacts should preserve these three
+files together.
+
 ### Distros
 
 #### Arch (AUR)

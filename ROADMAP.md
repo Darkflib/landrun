@@ -158,7 +158,9 @@ behavior, negative tests, and documented limitations.
 - Publish signed tags, checksums, and a software bill of materials for release
   artifacts.
 - Generate artifacts only from protected tags after all required checks pass.
-- Document which source revision and Go toolchain produced each artifact.
+- [x] Document which source revision and Go toolchain produced each artifact.
+  CI forces and verifies Go VCS stamping, `landrun --version` reports both
+  values, and each artifact bundle includes `landrun.buildinfo`.
 - [x] Maintain a changelog that calls out changes to policy semantics and minimum
   ABI requirements.
 

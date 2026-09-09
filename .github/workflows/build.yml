@@ -45,7 +45,7 @@ jobs:
       - name: Build static binary
         env:
           CGO_ENABLED: "0"
-        run: go build -trimpath -o landrun ./cmd/landrun
+        run: go build -trimpath -buildvcs=true -o landrun ./cmd/landrun
 
       - name: Verify static binary
         run: |
@@ -68,6 +68,18 @@ jobs:
       - name: Generate checksum
         run: sha256sum landrun > landrun.sha256
 
+      - name: Record and verify artifact provenance
+        run: |
+          version_output="$(./landrun --version)"
+          go_version="$(go env GOVERSION)"
+          echo "$version_output"
+          go version -m ./landrun | tee landrun.buildinfo
+          grep -Fq "$GITHUB_SHA" <<<"$version_output"
+          grep -Fq "$go_version" <<<"$version_output"
+          grep -Fq "vcs.revision=$GITHUB_SHA" landrun.buildinfo
+          grep -Fq "vcs.modified=false" landrun.buildinfo
+          grep -Fq "$go_version" landrun.buildinfo
+
       - name: Upload binary
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
@@ -75,5 +87,6 @@ jobs:
           path: |
             ./landrun
             ./landrun.sha256
+            ./landrun.buildinfo
           if-no-files-found: error
           retention-days: 14
