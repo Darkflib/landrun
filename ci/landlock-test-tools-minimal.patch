@@ -8,7 +8,7 @@ index 7ce3a22..48bf6ec 100755
 +	exec /usr/sbin/poweroff -f
 +	exit 1
  }
-@@ -99,31 +99,18 @@
+@@ -99,31 +99,19 @@
  mount -t tmpfs -o "mode=755,nosuid,nodev" tmpfs /mnt
 -
 -if command -v diod >/dev/null; then
@@ -35,13 +35,14 @@ index 7ce3a22..48bf6ec 100755
 -SHELL_SH="$(dirname -- "${BASH_SOURCE[0]}")/shell.sh"
 -
 +echo "[*] Skipping optional 9p and FUSE fixtures"
-+case "${TEST_EXEC}" in
-+NA==) EXPECTED_ABI=4 ;;
-+Ng==) EXPECTED_ABI=6 ;;
-+OQ==) EXPECTED_ABI=9 ;;
-+MTA=) EXPECTED_ABI=10 ;;
++if ! read -r EXPECTED_ABI < "${TEST_CWD}/.landlock-ci-abi"; then
++	echo "ERROR: Missing ABI matrix input" >&2
++	exit_poweroff 1
++fi
++case "${EXPECTED_ABI}" in
++4 | 6 | 9 | 10) ;;
 +*)
-+	echo "ERROR: Unsupported encoded ABI: ${TEST_EXEC}" >&2
++	echo "ERROR: Unsupported ABI: ${EXPECTED_ABI}" >&2
 +	exit_poweroff 1
 +	;;
 +esac
