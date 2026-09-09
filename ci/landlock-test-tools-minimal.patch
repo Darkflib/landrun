@@ -8,7 +8,7 @@ index 7ce3a22..48bf6ec 100755
 +	exec /usr/sbin/poweroff -f
 +	exit 1
  }
-@@ -99,31 +99,22 @@
+@@ -99,31 +99,28 @@
  mount -t tmpfs -o "mode=755,nosuid,nodev" tmpfs /mnt
 -
 -if command -v diod >/dev/null; then
@@ -35,13 +35,15 @@ index 7ce3a22..48bf6ec 100755
 -SHELL_SH="$(dirname -- "${BASH_SOURCE[0]}")/shell.sh"
 -
 +echo "[*] Skipping optional 9p and FUSE fixtures"
-+GUEST_DIR="${PATH%%:*}"
-+TOOLS_DIR="${GUEST_DIR%/guest}"
-+REPO_DIR="${TOOLS_DIR%/*}"
-+if ! read -r EXPECTED_ABI < "${REPO_DIR}/.landlock-ci-abi"; then
-+	echo "ERROR: Missing ABI matrix input" >&2
-+	exit_poweroff 1
-+fi
++EXPECTED_ABI=
++REPO_DIR=
++read -r -a KERNEL_ARGS < /proc/cmdline
++for KERNEL_ARG in "${KERNEL_ARGS[@]}"; do
++	case "${KERNEL_ARG}" in
++	LANDRUN_TEST_ABI=*) EXPECTED_ABI="${KERNEL_ARG#*=}" ;;
++	TEST_CWD=*) REPO_DIR="${KERNEL_ARG#*=}" ;;
++	esac
++done
 +case "${EXPECTED_ABI}" in
 +4 | 6 | 9 | 10) ;;
 +*)
@@ -49,6 +51,10 @@ index 7ce3a22..48bf6ec 100755
 +	exit_poweroff 1
 +	;;
 +esac
++if [[ -z "${REPO_DIR}" ]]; then
++	echo "ERROR: Missing repository path" >&2
++	exit_poweroff 1
++fi
 +echo "[*] Launching ABI ${EXPECTED_ABI} boundary tests"
 -echo "[*] Launching ${SHELL_SH} ${DECODED_EXEC}"
 -

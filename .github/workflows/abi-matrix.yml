@@ -136,8 +136,6 @@ jobs:
 
       - name: Test ABI boundary and policy behavior
         run: |
-          abi_file="${PWD}/.landlock-ci-abi"
-          trap 'rm -f -- "${abi_file}"' EXIT
-          printf '%s\n' '${{ matrix.abi }}' > "${abi_file}"
           timeout --signal=TERM --kill-after=30s 15m \
-            ./landlock-test-tools/uml-run.sh ./linux-${{ matrix.version }} -- true
+            ./landlock-test-tools/uml-run.sh ./linux-${{ matrix.version }} \
+            LANDRUN_TEST_ABI=${{ matrix.abi }} -- true

@@ -25,14 +25,13 @@ finds their helpers through systemd's guest environment. Landrun does not use
 either optional filesystem. The workflow applies the narrow, checked-in
 `ci/landlock-test-tools-minimal.patch` to skip those fixtures. `git apply` fails
 closed if a future test-tools pin changes the surrounding init code. The same
-patch replaces the harness's generic base64 command handoff with its existing
-shared host-filesystem channel, accepts only the four ABIs in the matrix, and
-makes a fixed, unprivileged call to the repository-owned boundary-test script.
-The checkout root is derived from the harness's first, fixed guest `PATH` entry
-instead of relying on systemd to forward the host working directory. The
-workflow removes the one-line ABI input file on exit. The patch also uses the
-absolute system poweroff path because the guest inherits a deliberately narrow
-host `PATH`.
+patch replaces the harness's generic base64 command handoff with a parser for
+the runner-supplied ABI and checkout path in `/proc/cmdline`, accepts only the
+four ABIs in the matrix, and makes a fixed, unprivileged call to the
+repository-owned boundary-test script. Parsing the boot arguments avoids
+depending on systemd to forward the host working directory or custom ABI
+environment. The patch also uses the absolute system poweroff path because the
+guest inherits a deliberately narrow host `PATH`.
 
 The UML harness currently produces x86_64 kernels, so this compatibility matrix
 runs on amd64. The regular build and integration workflows separately compile
