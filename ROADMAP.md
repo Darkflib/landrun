@@ -34,9 +34,8 @@ Status: complete.
 Acceptance gate: every pull request exercises policy behavior rather than only
 proving that the source compiles.
 
-Bound on that gate: hosted runners report Landlock ABI 7, and the integration
-suite runs in best-effort mode, so behavior specific to ABI 8 and ABI 9 is not
-exercised by CI today. Milestone 2 closes this.
+That gate is now backed by the pinned UML matrix for ABIs 4, 6, 9, and 10 in
+addition to the hosted-runner integration suite.
 
 ## Milestone 1: Close policy-boundary issues
 
@@ -111,7 +110,9 @@ discarded a rule the caller asked for.
   or dedicated runners; hosted-runner kernel versions are not a sufficient
   compatibility matrix. The pinned UML matrix and update process are documented
   in [ABI testing](docs/abi-testing.md).
-- Add regression tests for the findings in the security review.
+- [x] Add regression tests for the findings in the security review. The mapping
+  from each finding to its unit, integration, and ABI-boundary coverage is
+  recorded in [the security review](docs/security-review.md#regression-coverage).
 - [x] Replace network-dependent integration tests with local deterministic peers;
   keep optional external smoke tests separate.
 - [x] Stop injecting `--best-effort` into every integration case. Gate the `--unix`

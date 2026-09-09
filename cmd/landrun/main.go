@@ -156,6 +156,10 @@ func newCommand() *cli.Command {
 			if len(args) == 0 {
 				return errors.New("missing command to run")
 			}
+			preservedDescriptors := c.IntSlice("preserve-fd")
+			if err := exec.ValidateInheritedDescriptors(preservedDescriptors); err != nil {
+				return fmt.Errorf("invalid inherited descriptors: %w", err)
+			}
 
 			// Combine --ro and --rox paths for read-only access
 			readOnlyPaths := append([]string{}, c.StringSlice("ro")...)
@@ -220,7 +224,7 @@ func newCommand() *cli.Command {
 			if err := sandbox.Apply(cfg); err != nil {
 				return fmt.Errorf("failed to apply sandbox: %w", err)
 			}
-			if err := exec.PrepareInheritedDescriptors(c.IntSlice("preserve-fd")); err != nil {
+			if err := exec.PrepareInheritedDescriptors(preservedDescriptors); err != nil {
 				return fmt.Errorf("failed to prepare inherited descriptors: %w", err)
 			}
 

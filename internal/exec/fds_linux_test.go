@@ -103,6 +103,20 @@ func TestValidatePreservedDescriptors(t *testing.T) {
 	}
 }
 
+func TestValidateInheritedDescriptorsRejectsClosedNumberBeforeSetup(t *testing.T) {
+	file, err := os.Open("/dev/null")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fd := int(file.Fd())
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateInheritedDescriptors([]int{fd}); err == nil {
+		t.Fatalf("closed descriptor %d should be rejected before launcher setup", fd)
+	}
+}
+
 func inheritedDescriptorFixtures(t *testing.T) ([]*os.File, func()) {
 	t.Helper()
 

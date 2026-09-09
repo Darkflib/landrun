@@ -7,7 +7,10 @@ import (
 	"os"
 	osexec "os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestRunFileUsesOpenedExecutable(t *testing.T) {
@@ -51,6 +54,33 @@ func TestRunFileReplacementHelper(t *testing.T) {
 	env := append(os.Environ(), "LANDRUN_EXEC_FD_EXECUTED=1")
 	if err := RunFile(file, []string{target, "-test.run=^TestRunFileReplacementHelper$"}, env); err != nil {
 		t.Fatalf("failed to execute opened target: %v", err)
+	}
+}
+
+func TestRunFileRejectsDirectScriptWithoutExposingDescriptor(t *testing.T) {
+	script := filepath.Join(t.TempDir(), "script.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file, err := OpenExecutable(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	if err := PrepareInheritedDescriptors(nil); err != nil {
+		t.Fatal(err)
+	}
+	err = RunFile(file, []string{script}, nil)
+	if err == nil || !strings.Contains(err.Error(), "invoke the interpreter explicitly") {
+		t.Fatalf("direct script returned %v", err)
+	}
+	flags, err := unix.FcntlInt(file.Fd(), unix.F_GETFD, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flags&unix.FD_CLOEXEC == 0 {
+		t.Fatal("script descriptor was made inheritable")
 	}
 }
 

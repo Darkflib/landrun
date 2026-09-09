@@ -30,7 +30,9 @@ Severity: High for a general-purpose sandbox launcher.
 Status: Remediated in #3 (`be5f03f`). Descriptors 3 and above are marked
 close-on-exec by default. `--preserve-fd` provides an explicit, validated
 opt-in for descriptor passing; standard input, output, and error remain
-inherited.
+inherited. Preserve requests are validated before launcher setup opens its own
+descriptors, and the close-on-exec policy is applied again immediately before
+execution.
 
 `internal/exec.Run` calls `syscall.Exec` without closing or marking inherited
 file descriptors close-on-exec. Landlock does not retroactively restrict files
@@ -90,11 +92,11 @@ Recommended remediation:
 
 Severity: Medium.
 
-Status: Remediated in this change. Policies are validated before Landlock rules are built.
-Bind ports must be in the range 0-65535, with zero explicitly retaining the
-kernel's ephemeral-port behavior. Connect ports must be in the range 1-65535.
-Ports are converted to `uint16` only after validation, and duplicate paths and
-ports are de-duplicated in deterministic order.
+Status: Remediated in #7 (`7904bf7`). Policies are validated before Landlock
+rules are built. Bind ports must be in the range 0-65535, with zero explicitly
+retaining the kernel's ephemeral-port behavior. Connect ports must be in the
+range 1-65535. Ports are converted to `uint16` only after validation, and
+duplicate paths and ports are de-duplicated in deterministic order.
 
 CLI ports are parsed as `int` and converted directly to `uint16`. Negative and
 greater-than-65535 values therefore wrap rather than fail. For example,
@@ -120,10 +122,11 @@ Recommended remediation:
 Severity: Medium, rising to High when callers treat successful startup as proof
 that every requested restriction is active.
 
-Status: Partially remediated in this change. `--probe` and `--probe-json` expose
-the kernel ABI, and explicitly requested controls now fail closed under
-`--best-effort` when that ABI is too old. The ABI-boundary matrix and complete
-effective-policy report remain open.
+Status: Remediated across #9 (`d628048`), #16 (`e53ea4a`), and #17
+(`855e606`). `--probe` and `--probe-json` expose the kernel ABI, explicitly
+requested controls fail closed under `--best-effort` when that ABI is too old,
+debug output reports the effective policy, and pinned UML kernels exercise the
+feature boundaries.
 
 The default policy still targets Landlock ABI 9. On an older kernel,
 `--best-effort` may downgrade unrequested maximum-coverage rights, but explicit
@@ -150,8 +153,8 @@ Recommended remediation:
 Severity: Medium, rising to High when callers treat successful startup as proof
 that every requested restriction is active.
 
-Status: Remediated in this change. Matching rule and `--unrestricted-*` flags
-are rejected during policy validation, before any Landlock interaction.
+Status: Remediated in #8 (`efffda4`). Matching rule and `--unrestricted-*`
+flags are rejected during policy validation, before any Landlock interaction.
 
 Before remediation, `--unrestricted-filesystem` discarded every `--ro`, `--rw`,
 `--rox` and `--rwx` rule with no diagnostic, and `--unix` with only a `log.Info`
@@ -177,6 +180,16 @@ Recommended remediation:
 - Keep the check in the policy-validation path, so it shares the launcher error
   code with the other input-validation failures.
 - Add negative tests for each pairing.
+
+## Regression coverage
+
+| Finding | Guard | Regression coverage |
+| --- | --- | --- |
+| LL-001 | Descriptors 3 and above are close-on-exec unless explicitly preserved | `internal/exec/fds_linux_test.go` covers regular files, directories, listening sockets, and connected sockets; `test.sh` covers the default and explicit-preservation CLI behavior |
+| LL-002 | Dependency discovery performs no helper execution, command lookup is not repeated, and the target is executed from its opened descriptor | `internal/elfdeps/elfdeps_test.go` supplies an unresolved dependency and hostile `PATH`; `internal/exec/runner_test.go` covers lookup reuse; `internal/exec/executable_linux_test.go` replaces the target path after open and checks direct scripts cannot expose the descriptor |
+| LL-003 | Ports are range-checked before conversion and port zero has explicit semantics | `internal/sandbox/sandbox_test.go`, `cmd/landrun/main_test.go`, and the local TCP peers in `test.sh` cover negative, oversized, zero, allowed, and denied cases |
+| LL-004 | Explicit features have minimum-ABI checks and the effective policy is inspectable | `internal/sandbox/sandbox_test.go` covers policy computation; `ci/test-abi-boundary.sh` runs on pinned ABI 4, 6, 9, and 10 kernels and checks strict failure, audit boundaries, handled rights, scopes, and TSYNC |
+| LL-005 | Rules cannot be combined with an unrestricted override for their domain | `internal/sandbox/sandbox_test.go` covers every filesystem, UNIX-socket, and TCP pairing; `test.sh` checks launcher status for representative filesystem, network, and audit conflicts |
 
 ## Platform limitations relevant to the findings
 
