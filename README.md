@@ -350,6 +350,14 @@ Use `--use-system` to test against the system-installed landrun binary:
 ./test.sh --use-system
 ```
 
+The default test suite uses only local deterministic peers. Public-network
+smoke tests for `example.com` and `kernel.org` are opt-in with `--online` and
+should not be used as a CI or release gate:
+
+```bash
+./test.sh --online
+```
+
 ## Future Features
 
 Based on the Linux Landlock API capabilities, we plan to add:

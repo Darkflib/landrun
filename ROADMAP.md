@@ -112,7 +112,7 @@ discarded a rule the caller asked for.
   compatibility matrix. The pinned UML matrix and update process are documented
   in [ABI testing](docs/abi-testing.md).
 - Add regression tests for the findings in the security review.
-- Replace network-dependent integration tests with local deterministic peers;
+- [x] Replace network-dependent integration tests with local deterministic peers;
   keep optional external smoke tests separate.
 - [x] Stop injecting `--best-effort` into every integration case. Gate the `--unix`
   cases on ABI 9, run them strictly, and make them connect to a real socket in
@@ -121,7 +121,7 @@ discarded a rule the caller asked for.
   instead of falling back to 0 and inverting the strict-ABI assertion.
 - [x] Drop the suite's `go run` dependency once `landrun --probe` exists, so it can
   run against a downloaded artifact without a Go toolchain.
-- Lint the security-relevant surfaces in CI: `shellcheck` on `test.sh` and
+- [x] Lint the security-relevant surfaces in CI: `shellcheck` on `test.sh` and
   `actionlint` on the workflows.
 - [x] Add race testing where it is compatible with the Landlock test harness.
 - [x] Record kernel ABI and effective policy in CI output.

@@ -4,8 +4,9 @@
 KEEP_BINARY=false
 USE_SYSTEM_BINARY=false
 NO_BUILD=false
-# Whether we should try to do network calls during testing.
-INTERNET_ACCESS=true
+# Public-network smoke tests are opt-in; the default suite is deterministic and
+# runs entirely against local peers.
+INTERNET_ACCESS=false
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -23,6 +24,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         "--offline")
             INTERNET_ACCESS=false
+            shift
+            ;;
+        "--online")
+            INTERNET_ACCESS=true
             shift
             ;;
         *)
