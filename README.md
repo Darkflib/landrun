@@ -138,186 +138,45 @@ landrun [options] <command> [args...]
 
 - `LANDRUN_LOG_LEVEL`: Set logging level (error, info, debug)
 
-### Examples
+### Quick examples
 
-1. Run a command that allows exec access to a specific file
-
-```bash
-landrun --rox /usr/bin/ls --rox /usr/lib --ro /home ls /home
-```
-
-2. Run a command with read-only access to a directory:
+Check the host's Landlock ABI:
 
 ```bash
-landrun --rox /usr/ --ro /path/to/dir ls /path/to/dir
+landrun --probe
 ```
 
-3. Run a command with write access to a directory:
+Run a command with one read-only input and one writable data directory:
 
 ```bash
-landrun --rox /usr/bin --ro /lib --rw /path/to/dir touch /path/to/dir/newfile
-```
-
-4. Run a command with write access to a file:
-
-```bash
-landrun --rox /usr/bin --ro /lib --rw /path/to/dir/newfile touch /path/to/dir/newfile
-```
-
-5. Run a command with execution permissions:
-
-```bash
-landrun --rox /usr/ --ro /lib,/lib64 /usr/bin/bash
-```
-
-6. Run with debug logging:
-
-```bash
-landrun --log-level debug --rox /usr/ --ro /lib,/lib64,/path/to/dir ls /path/to/dir
-```
-
-7. Run with network restrictions:
-
-```bash
-landrun --rox /usr/ --ro /lib,/lib64 --bind-tcp 8080 --connect-tcp 80 /usr/bin/my-server
-```
-
-This will allow the program to only bind to TCP port 8080 and connect to TCP port 80.
-
-8. Run a DNS client with appropriate permissions:
-
-```bash
-landrun --log-level debug --ro /etc,/usr --rox /usr/ --connect-tcp 443 nc kernel.org 443
-```
-
-This allows connections to port 443, requires access to /etc/resolv.conf for resolving DNS.
-
-9. Run a web server with selective network permissions:
-
-```bash
-landrun --rox /usr/bin --ro /lib,/lib64,/var/www --rwx /var/log --bind-tcp 80,443 /usr/bin/nginx
-```
-
-10. Running anything without providing parameters is... maximum security jail!
-
-```bash
-landrun ls
-```
-
-11. If you keep getting permission denied without knowing what exactly going on, best to use strace with it.
-
-```bash
-landrun --rox /usr strace -f -e trace=all ls
-```
-
-12. Run with specific environment variables:
-
-```bash
-landrun --rox /usr --ro /etc --env HOME --env PATH --env CUSTOM_VAR=my_value -- env
-```
-
-This example passes the current HOME and PATH variables, plus a custom variable named CUSTOM_VAR.
-
-13. Run command with explicity access to files instead of directories:
-```bash
-landrun --rox /usr/lib/libc.so.6 --rox /usr/lib64/ld-linux-x86-64.so.2  --rox /usr/bin/true /usr/bin/true
-```
-
-14. Run a command with --add-exec which automatically adds target binary to --rox
-
-```bash
-landrun --rox /usr/lib/ --add-exec /usr/bin/true
-```
-
-15. Run a command with --ldd and --add-exec which automatically adds required libraries and target binary to --rox
-
-```bash
-landrun --ldd --add-exec /usr/bin/true
-```
-
-Note that shared libs always need exec permission due to how they are loaded, PROT_EXEC on mmap() etc.
-
-16. Allow connecting to a pathname UNIX domain socket (ABI v9+), e.g. a database socket:
-
-```bash
-landrun --best-effort --rox /usr --ro /etc --unix /run/postgresql/.s.PGSQL.5432 -- psql ...
-```
-
-17. Gracefully ignore optional paths that may not exist:
-
-```bash
-landrun --best-effort --ignore-missing --rox /usr --ro /etc,/opt/optional-config -- myapp
-```
-
-18. Allow abstract UNIX sockets / signals to reach outside the sandbox (relax IPC scoping):
-
-```bash
-landrun --best-effort --unrestricted-scoped --rox /usr --ro /etc -- some-gui-app
-```
-
-19. Intentionally pass an already-open descriptor to the command:
-
-```bash
-landrun --best-effort --add-exec --ldd --preserve-fd 3 -- \
-    /bin/sh -c 'IFS= read -r line <&3; printf "%s\n" "$line"' 3<./input.txt
-```
-
-Descriptors are capabilities: a preserved file, directory, or socket remains
-usable even when its path or network peer would otherwise be denied by the
-Landlock policy.
-
-## Systemd Integration
-
-landrun can be integrated with systemd to run services with enhanced security. Here's an example of running nginx with landrun:
-
-1. Create a systemd service file (e.g., `/etc/systemd/system/nginx-landrun.service`):
-
-```ini
-[Unit]
-Description=nginx with landrun sandbox
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/landrun \
+landrun \
     --best-effort \
-    --rox /usr/bin,/usr/lib \
-    --ro  /etc/nginx,/etc/ssl,/etc/passwd,/etc/group,/etc/nsswitch.conf \
-    --rwx /var/log/nginx \
-    --rwx /var/cache/nginx \
-    --bind-tcp 80,443 \
-    /usr/bin/nginx -g 'daemon off;'
-Restart=always
-User=nginx
-Group=nginx
-
-[Install]
-WantedBy=multi-user.target
+    --add-exec \
+    --ldd \
+    --ro "$PWD/config.toml" \
+    --rw "$PWD/data" \
+    -- \
+    /opt/myapp/bin/myapp --config "$PWD/config.toml"
 ```
 
-2. Enable and start the service:
+Allow outbound TCP connections to port 443:
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable nginx-landrun
-sudo systemctl start nginx-landrun
+landrun \
+    --best-effort \
+    --add-exec \
+    --rox /usr/lib \
+    --ro /etc/ssl/certs,/etc/resolv.conf,/etc/nsswitch.conf,/etc/hosts \
+    --connect-tcp 443 \
+    -- \
+    /usr/bin/curl https://example.com/
 ```
 
-3. Check the service status:
-
-```bash
-sudo systemctl status nginx-landrun
-```
-
-This configuration:
-- Runs nginx with minimal required permissions
-- Allows binding to ports 80 and 443
-- Provides read-only access to configuration files
-- Allows write access only to log and cache directories
-- Runs as the nginx user and group
-- Automatically restarts on failure
-
-You can adjust the permissions based on your specific needs. For example, if you need to serve static files from `/var/www`, add `--ro /var/www` to the ExecStart line.
+The TCP rule is port-based, not a hostname or destination-address allowlist,
+and this version does not restrict UDP. Library, certificate, and name-service
+paths vary by distribution. See the [usage guide](docs/usage-guide.md) for
+practical CLI, build, server, UNIX-socket, descriptor-passing, systemd, and
+container examples, plus guidance on composing Landrun with other controls.
 
 ## Security
 
@@ -331,6 +190,11 @@ landrun uses Linux's Landlock to create a secure sandbox environment. It provide
 - Default restrictive mode when no rules are specified
 
 Landlock is an access-control system that enables processes to securely restrict themselves and their future children. As a stackable Linux Security Module (LSM), it creates additional security layers on top of existing system-wide access controls, helping to mitigate security impacts from bugs or malicious behavior in applications.
+
+Landrun does not replace Unix identities and permissions, SELinux/AppArmor,
+capability reduction, seccomp, namespaces, cgroups, or firewall/network policy.
+Those controls cover different boundaries and combine by further restricting
+the workload. See [How Landlock composes with other controls](docs/usage-guide.md#how-landlock-composes-with-other-controls).
 
 ### Landlock Access Control Rights
 
@@ -372,7 +236,7 @@ These are restricted by default and can be relaxed with `--unrestricted-scoped`.
 - TCP restrictions only apply to "classic" TCP sockets, not Multipath TCP. Since Go 1.24, `net.Listen` defaults to Multipath TCP and therefore cannot currently be restricted by Landlock (kernel bug [landlock-lsm/linux#54](https://github.com/landlock-lsm/linux/issues/54))
 - This version does not restrict UDP traffic
 - `--best-effort` may still omit unrequested higher-ABI coverage, but it will not drop an explicitly requested path, TCP, UNIX-socket, or audit-logging control
-- `--ldd` resolves dependencies without executing `ldconfig` or another helper; it fails closed if a library is only discoverable through a non-standard loader-cache entry
+- `--ldd` resolves dependencies without executing `ldconfig` or another helper; it supports standard Intel and ARM multilib layouts and fails closed for other ELF machine types, ambiguous 32-bit ARM float-ABI flags, or libraries only discoverable through a non-standard loader-cache entry
 - Some operations may require additional permissions
 - Files, directories, and sockets intentionally preserved with `--preserve-fd` are not retroactively restricted by Landlock
 
