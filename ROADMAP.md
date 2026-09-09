@@ -137,7 +137,7 @@ inferred from a single current kernel.
   implicitly in existing policy profiles.
 - Add policy-file support only after the CLI policy contract is stable.
 - Add audit-log guidance and diagnostics without requiring privileged access.
-- Document the `--ldd` support boundary in the README: Intel and ARM only, and
+- [x] Document the `--ldd` support boundary in the README: Intel and ARM only, and
   32-bit ARM objects carrying neither `EF_ARM_ABI_FLOAT_HARD` nor
   `EF_ARM_ABI_FLOAT_SOFT` are rejected, per file across the dependency chain.
 
