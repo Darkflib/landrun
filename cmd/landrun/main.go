@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"os"
 	osexec "os/exec"
 	"strings"
@@ -10,15 +13,29 @@ import (
 	"github.com/zouuup/landrun/internal/exec"
 	"github.com/zouuup/landrun/internal/log"
 	"github.com/zouuup/landrun/internal/sandbox"
-
-	"context"
 )
 
 // Version is the current version of landrun
 const Version = "0.1.18"
 
+// launcherErrorExitCode distinguishes landrun setup and policy failures from
+// the exit status of a command that was successfully executed.
+const launcherErrorExitCode = 125
+
 func main() {
-	app := &cli.Command{
+	os.Exit(run(os.Args))
+}
+
+func run(args []string) int {
+	if err := newCommand().Run(context.Background(), args); err != nil {
+		log.Error("%v", err)
+		return launcherErrorExitCode
+	}
+	return 0
+}
+
+func newCommand() *cli.Command {
+	return &cli.Command{
 		Name:    "landrun",
 		Usage:   "Run a command in a Landlock sandbox",
 		Version: Version,
@@ -51,12 +68,12 @@ func main() {
 			},
 			&cli.IntSliceFlag{
 				Name:   "bind-tcp",
-				Usage:  "Allow binding to these TCP ports",
+				Usage:  "Allow binding to these TCP ports (0-65535; 0 requests an ephemeral port)",
 				Hidden: false,
 			},
 			&cli.IntSliceFlag{
 				Name:   "connect-tcp",
-				Usage:  "Allow connecting to these TCP ports",
+				Usage:  "Allow connecting to these TCP ports (1-65535)",
 				Hidden: false,
 			},
 			&cli.BoolFlag{
@@ -120,12 +137,12 @@ func main() {
 		},
 		Before: func(ctx context.Context, c *cli.Command) (context.Context, error) {
 			log.SetLevel(c.String("log-level"))
-			return nil, nil
+			return ctx, nil
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			args := c.Args().Slice()
 			if len(args) == 0 {
-				log.Fatal("Missing command to run")
+				return errors.New("missing command to run")
 			}
 
 			// Combine --ro and --rox paths for read-only access
@@ -142,7 +159,7 @@ func main() {
 
 			binary, err := osexec.LookPath(args[0])
 			if err != nil {
-				log.Fatal("Failed to find binary: %v", err)
+				return fmt.Errorf("failed to find binary: %w", err)
 			}
 
 			// Add command to readOnlyExecutablePaths
@@ -155,7 +172,7 @@ func main() {
 			if c.Bool("ldd") {
 				libPaths, err := elfdeps.GetLibraryDependencies(binary)
 				if err != nil {
-					log.Fatal("Failed to detect library dependencies: %v", err)
+					return fmt.Errorf("failed to detect library dependencies: %w", err)
 				}
 				// Add library directories to readOnlyExecutablePaths
 				readOnlyExecutablePaths = append(readOnlyExecutablePaths, libPaths...)
@@ -184,18 +201,17 @@ func main() {
 			envVars := processEnvironmentVars(c.StringSlice("env"))
 
 			if err := sandbox.Apply(cfg); err != nil {
-				log.Fatal("Failed to apply sandbox: %v", err)
+				return fmt.Errorf("failed to apply sandbox: %w", err)
 			}
 			if err := exec.PrepareInheritedDescriptors(c.IntSlice("preserve-fd")); err != nil {
-				log.Fatal("Failed to prepare inherited descriptors: %v", err)
+				return fmt.Errorf("failed to prepare inherited descriptors: %w", err)
 			}
 
-			return exec.Run(binary, args, envVars)
+			if err := exec.Run(binary, args, envVars); err != nil {
+				return fmt.Errorf("failed to execute command: %w", err)
+			}
+			return nil
 		},
-	}
-
-	if err := app.Run(context.Background(), os.Args); err != nil {
-		log.Fatal("%v", err)
 	}
 }
 

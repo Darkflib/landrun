@@ -51,3 +51,22 @@ func TestProcessEnvironmentVars(t *testing.T) {
 		})
 	}
 }
+
+func TestRunReturnsLauncherErrorForInvalidPolicy(t *testing.T) {
+	for _, args := range [][]string{
+		{"landrun", "--bind-tcp", "-1", "--", "true"},
+		{"landrun", "--bind-tcp", "65536", "--", "true"},
+		{"landrun", "--connect-tcp", "0", "--", "true"},
+		{"landrun", "--connect-tcp", "131071", "--", "true"},
+	} {
+		if got := run(args); got != launcherErrorExitCode {
+			t.Errorf("run(%q) returned %d, want %d", args, got, launcherErrorExitCode)
+		}
+	}
+}
+
+func TestRunReturnsLauncherErrorWhenCommandIsMissing(t *testing.T) {
+	if got := run([]string{"landrun"}); got != launcherErrorExitCode {
+		t.Fatalf("run returned %d, want %d", got, launcherErrorExitCode)
+	}
+}

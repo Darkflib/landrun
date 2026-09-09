@@ -63,10 +63,9 @@ Status: Remediated in #2 (`1987fe5`), with the supported-ABI boundary
 narrowed in #4 (`28d1a11`). Dependency discovery no longer invokes `ldconfig`
 or any other helper. Libraries that cannot be resolved from the ELF search
 paths and architecture-specific standard directories now cause the launch to
-fail. The
-standard-directory lookup accounts for ELF class, endianness, and ARM floating
-point ABI across the supported Intel and ARM targets. Other ELF ABIs are
-rejected explicitly rather than searched using guessed directories.
+fail. The standard-directory lookup accounts for ELF class, endianness, and
+ARM floating-point ABI across the supported Intel and ARM targets. Other ELF
+ABIs are rejected explicitly rather than searched using guessed directories.
 
 The ELF dependency parser is non-executing, but its cache fallback invokes
 `exec.Command("ldconfig", "-p")`. This lookup uses the launcher's ambient
@@ -91,7 +90,11 @@ Recommended remediation:
 
 Severity: Medium.
 
-Status: Open. Still present at `internal/sandbox/sandbox.go:238` and `:243`.
+Status: Remediated in this change. Policies are validated before Landlock rules are built.
+Bind ports must be in the range 0-65535, with zero explicitly retaining the
+kernel's ephemeral-port behavior. Connect ports must be in the range 1-65535.
+Ports are converted to `uint16` only after validation, and duplicate paths and
+ports are de-duplicated in deterministic order.
 
 CLI ports are parsed as `int` and converted directly to `uint16`. Negative and
 greater-than-65535 values therefore wrap rather than fail. For example,
