@@ -119,7 +119,7 @@ jobs:
           git -C landlock-test-tools apply ../ci/landlock-test-tools-minimal.patch
           service=landlock-test-tools/guest/systemd/landlock-test.service
           guest_init="${PWD}/landlock-test-tools/guest/init.sh"
-          exec_start="ExecStart=bash ${guest_init} ${{ matrix.abi }} ${PWD}"
+          exec_start="ExecStart=bash -x ${guest_init} ${{ matrix.abi }} ${PWD}"
           sed -i "s|^ExecStart=.*$|${exec_start}|" "${service}"
           grep -Fqx -- "${exec_start}" "${service}"
           grep -Fx -- "${exec_start}" "${service}"
