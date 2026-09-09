@@ -64,7 +64,7 @@ narrowed in #4 (`28d1a11`). Dependency discovery no longer invokes `ldconfig`
 or any other helper. Libraries that cannot be resolved from the ELF search
 paths and architecture-specific standard directories now cause the launch to
 fail. The standard-directory lookup accounts for ELF class, endianness, and
-ARM floating point ABI across the supported Intel and ARM targets. Other ELF
+ARM floating-point ABI across the supported Intel and ARM targets. Other ELF
 ABIs are rejected explicitly rather than searched using guessed directories.
 
 The ELF dependency parser is non-executing, but its cache fallback invokes
