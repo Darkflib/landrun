@@ -138,7 +138,10 @@ inferred from a single current kernel.
 - Track new filesystem and network access rights without enabling them
   implicitly in existing policy profiles.
 - Add policy-file support only after the CLI policy contract is stable.
-- Add audit-log guidance and diagnostics without requiring privileged access.
+- [x] Add audit-log guidance and diagnostics without requiring privileged
+  access. Landrun's effective-policy record reports applied audit flags; the
+  operational and host-observability boundary is documented in
+  [Landlock audit logging](docs/audit-logging.md).
 - [x] Document the `--ldd` support boundary in the README: Intel and ARM only, and
   32-bit ARM objects carrying neither `EF_ARM_ABI_FLOAT_HARD` nor
   `EF_ARM_ABI_FLOAT_SOFT` are rejected, per file across the dependency chain.
