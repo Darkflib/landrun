@@ -122,7 +122,7 @@ discarded a rule the caller asked for.
   run against a downloaded artifact without a Go toolchain.
 - Lint the security-relevant surfaces in CI: `shellcheck` on `test.sh` and
   `actionlint` on the workflows.
-- Add race testing where it is compatible with the Landlock test harness.
+- [x] Add race testing where it is compatible with the Landlock test harness.
 - Record kernel ABI and effective policy in CI output.
 
 Acceptance gate: compatibility behavior is tested at feature boundaries, not
