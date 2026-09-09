@@ -37,7 +37,7 @@ index 7ce3a22..48bf6ec 100755
 +echo "[*] Skipping optional 9p and FUSE fixtures"
 +EXPECTED_ABI=
 +REPO_DIR=
-+read -r -a KERNEL_ARGS < /proc/cmdline
++read -r -a KERNEL_ARGS < /proc/cmdline || true
 +for KERNEL_ARG in "${KERNEL_ARGS[@]}"; do
 +	case "${KERNEL_ARG}" in
 +	LANDRUN_TEST_ABI=*) EXPECTED_ABI="${KERNEL_ARG#*=}" ;;
