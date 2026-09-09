@@ -248,6 +248,16 @@ func TestRequiredABI(t *testing.T) {
 	}
 }
 
+func TestFullNetAccessKeepsUDPUnrestricted(t *testing.T) {
+	udpRights := landlock.AccessNetSet(syscall.AccessNetBindUDP | syscall.AccessNetConnectSendUDP)
+	if fullNetAccess&udpRights != 0 {
+		t.Fatalf("fullNetAccess unexpectedly enables ABI 10 UDP rights: %#x", fullNetAccess&udpRights)
+	}
+	if fullNetAccess != landlock.AccessNetSet(syscall.AccessNetBindTCP|syscall.AccessNetConnectTCP) {
+		t.Fatalf("fullNetAccess changed unexpectedly: %#x", fullNetAccess)
+	}
+}
+
 func TestApplyValidatesBeforeUnrestrictedNoOp(t *testing.T) {
 	for _, tc := range []struct {
 		name string
