@@ -8,7 +8,7 @@ index 7ce3a22..48bf6ec 100755
 +	exec /usr/sbin/poweroff -f
 +	exit 1
  }
-@@ -99,31 +99,22 @@
+@@ -99,31 +99,23 @@
  mount -t tmpfs -o "mode=755,nosuid,nodev" tmpfs /mnt
 -
 -if command -v diod >/dev/null; then
@@ -37,7 +37,8 @@ index 7ce3a22..48bf6ec 100755
 +echo "[*] Skipping optional 9p and FUSE fixtures"
 +EXPECTED_ABI="${1:-}"
 +REPO_DIR="${2:-}"
-+echo "[*] Guest arguments: ABI=${EXPECTED_ABI:-missing} repo=${REPO_DIR:-missing}"
++echo "[*] Guest arguments: ABI=${EXPECTED_ABI:-missing} repo=${REPO_DIR:-missing}" >&2
++sleep 1
 +case "${EXPECTED_ABI}" in
 +4 | 6 | 9 | 10) ;;
 +*)
