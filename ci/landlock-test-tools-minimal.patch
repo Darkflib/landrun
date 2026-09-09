@@ -1,0 +1,31 @@
+diff --git a/guest/init.sh b/guest/init.sh
+index 7ce3a22..ec36dc1 100755
+--- a/guest/init.sh
++++ b/guest/init.sh
+@@ -98,25 +98,7 @@ if [[ ! -d /mnt ]]; then
+ fi
+ mount -t tmpfs -o "mode=755,nosuid,nodev" tmpfs /mnt
+ 
+-if command -v diod >/dev/null; then
+-	mkdir /mnt/test-v9fs-src
+-	chmod 1777 /mnt/test-v9fs-src
+-	mkdir /mnt/test-v9fs
+-	# Listen on the 9pfs port.
+-	diod -n -l 127.0.0.1:564 -e /mnt/test-v9fs-src
+-	mount.diod -n 127.0.0.1:/mnt/test-v9fs-src /mnt/test-v9fs
+-else
+-	echo "WARNING: Could not find the diod command." >&2
+-fi
+-
+-if command -v bindfs >/dev/null; then
+-	mkdir /mnt/test-fuse-src
+-	chmod 1777 /mnt/test-fuse-src
+-	mkdir /mnt/test-fuse
+-	bindfs /mnt/test-fuse-src /mnt/test-fuse
+-else
+-	echo "WARNING: Could not find the bindfs command." >&2
+-fi
++echo "[*] Skipping optional 9p and FUSE fixtures"
+ 
+ DECODED_EXEC="$(printf "%s" "${TEST_EXEC}" | base64 -d)"
+ SHELL_SH="$(dirname -- "${BASH_SOURCE[0]}")/shell.sh"

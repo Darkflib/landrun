@@ -20,11 +20,11 @@ requires the exact expected ABI before it exercises effective-policy reporting,
 strict compatibility failures, explicit audit controls, and the offline
 integration suite.
 
-The upstream guest init opportunistically uses `bindfs` when it is executable
-on the host. The light kernels do not need or enable that optional FUSE fixture,
-so the workflow removes that single optional package from the ephemeral runner
-before boot and verifies that the command is absent. This keeps an unrelated
-host-image package from changing the guest test setup.
+The upstream guest init opportunistically mounts 9p and FUSE fixtures when it
+finds their helpers through systemd's guest environment. Landrun does not use
+either optional filesystem. The workflow applies the narrow, checked-in
+`ci/landlock-test-tools-minimal.patch` to skip those fixtures. `git apply` fails
+closed if a future test-tools pin changes the surrounding init code.
 
 The UML harness currently produces x86_64 kernels, so this compatibility matrix
 runs on amd64. The regular build and integration workflows separately compile
