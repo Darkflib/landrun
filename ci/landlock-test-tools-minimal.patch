@@ -8,7 +8,7 @@ index 7ce3a22..48bf6ec 100755
 +	exec /usr/sbin/poweroff -f
 +	exit 1
  }
-@@ -99,31 +99,8 @@
+@@ -99,31 +99,18 @@
  mount -t tmpfs -o "mode=755,nosuid,nodev" tmpfs /mnt
 -
 -if command -v diod >/dev/null; then
@@ -35,7 +35,17 @@ index 7ce3a22..48bf6ec 100755
 -SHELL_SH="$(dirname -- "${BASH_SOURCE[0]}")/shell.sh"
 -
 +echo "[*] Skipping optional 9p and FUSE fixtures"
-+echo "[*] Launching ABI ${LANDLOCK_CRATE_TEST_ABI} boundary tests"
++case "${TEST_EXEC}" in
++NA==) EXPECTED_ABI=4 ;;
++Ng==) EXPECTED_ABI=6 ;;
++OQ==) EXPECTED_ABI=9 ;;
++MTA=) EXPECTED_ABI=10 ;;
++*)
++	echo "ERROR: Unsupported encoded ABI: ${TEST_EXEC}" >&2
++	exit_poweroff 1
++	;;
++esac
++echo "[*] Launching ABI ${EXPECTED_ABI} boundary tests"
 -echo "[*] Launching ${SHELL_SH} ${DECODED_EXEC}"
 -
 +cd "${TEST_CWD}"
@@ -44,6 +54,6 @@ index 7ce3a22..48bf6ec 100755
 -"${SHELL_SH}" "${DECODED_EXEC}" || RET=$?
 -
 +setpriv --reuid "${TEST_UID}" --clear-groups -- \
-+	./ci/test-abi-boundary.sh "${LANDLOCK_CRATE_TEST_ABI}" || RET=$?
++	./ci/test-abi-boundary.sh "${EXPECTED_ABI}" || RET=$?
 -echo "[*] Returned value: ${RET}"
 +echo "[*] Returned value: ${RET}"

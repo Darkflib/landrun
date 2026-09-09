@@ -137,5 +137,5 @@ jobs:
       - name: Test ABI boundary and policy behavior
         run: |
           timeout --signal=TERM --kill-after=30s 15m \
-            ./landlock-test-tools/uml-run.sh ./linux-${{ matrix.version }} \
-            LANDLOCK_CRATE_TEST_ABI=${{ matrix.abi }} -- true
+            ./landlock-test-tools/uml-run.sh ./linux-${{ matrix.version }} -- \
+            ${{ matrix.abi }}
