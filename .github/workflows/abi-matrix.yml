@@ -133,9 +133,10 @@ jobs:
 
       - name: Disable unused optional bindfs fixture
         run: |
-          if bindfs_path="$(command -v bindfs)"; then
-            sudo chmod a-x "$bindfs_path"
+          if command -v bindfs >/dev/null; then
+            sudo apt-get remove --yes bindfs
           fi
+          ! command -v bindfs >/dev/null
 
       - name: Test ABI boundary and policy behavior
         run: |
