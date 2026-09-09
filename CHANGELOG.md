@@ -30,8 +30,9 @@ semantics, and minimum Landlock ABI changes are called out explicitly.
   selected policy ABI, handled rights and scopes, audit flags, and TSYNC state.
 - Added strict feature-boundary checks for audit-log controls, IPC scoping, and
   pathname UNIX-socket policy handling.
-- Added a practical usage guide, security review, hardening roadmap, private
-  vulnerability-reporting policy, and pinned ABI compatibility documentation.
+- Added practical usage and audit-logging guides, a security review, hardening
+  roadmap, private vulnerability-reporting policy, and pinned ABI compatibility
+  documentation.
 
 ### Changed
 

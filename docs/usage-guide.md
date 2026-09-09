@@ -23,6 +23,11 @@ on an older kernel. Best-effort mode can omit unrequested protections introduced
 by newer ABIs, but landrun still fails with status 125 if the host cannot enforce
 an explicitly requested control.
 
+The ABI 7 audit options control which denials the kernel selects for its
+system-wide audit log. They do not provide a per-process log stream. Use the
+unprivileged effective-policy diagnostic and administrator workflow described
+in [Landlock audit logging](audit-logging.md) when debugging denied access.
+
 ## Practical recipes
 
 ### Read one file with a dynamically linked tool

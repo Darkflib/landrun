@@ -151,6 +151,10 @@ is the lowest ABI that describes those handled rights, scopes, and audit flags;
 kernel-only enforcement improvements such as ABI 8 TSYNC are reported
 separately.
 
+See [Landlock audit logging](docs/audit-logging.md) for the ABI 7 flag
+semantics, unprivileged policy diagnostics, host audit commands, and the limits
+of denial logs as enforcement evidence.
+
 ### Quick examples
 
 Check the host's Landlock ABI:
