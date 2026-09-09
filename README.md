@@ -14,7 +14,8 @@ It's lightweight, auditable, and wraps Landlock up to v9 features (file access, 
 > Landrun is a defense-in-depth tool, not a complete container or network
 > firewall. Review the [known security issues and limitations](docs/security-review.md)
 > before using it with hostile code. Remediation work is tracked in the
-> [hardening roadmap](ROADMAP.md).
+> [hardening roadmap](ROADMAP.md). Report suspected vulnerabilities through the
+> [security policy](SECURITY.md).
 
 ## Features
 
