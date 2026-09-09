@@ -23,15 +23,13 @@ integration suite.
 The upstream guest init opportunistically mounts 9p and FUSE fixtures when it
 finds their helpers through systemd's guest environment. Landrun does not use
 either optional filesystem. The workflow applies the narrow, checked-in
-`ci/landlock-test-tools-minimal.patch` to skip those fixtures. `git apply` fails
-closed if a future test-tools pin changes the surrounding init code. The same
-patch replaces the harness's generic base64 command handoff with a parser for
-two fixed `ExecStart` arguments, accepts only the four ABIs in the matrix, and
-makes a fixed, unprivileged call to the repository-owned boundary-test script.
-The workflow rewrites and verifies that pinned systemd service line before boot,
-avoiding dependence on forwarded environment state or early procfs access. The
-patch also uses the absolute system
-poweroff path because the guest inherits a deliberately narrow host `PATH`.
+`ci/landlock-test-tools-minimal.patch` to skip those fixtures and use the
+absolute system poweroff path because the guest inherits a deliberately narrow
+host `PATH`. `git apply` fails closed if a future test-tools pin changes the
+surrounding init code. The test step follows the upstream harness pattern:
+stdin is `/dev/null`, output is drained through a bounded `cat`, and `pipefail`
+preserves the UML command's status. This keeps CI deterministic without
+changing Landlock's test command or forwarding host environment state.
 
 The UML harness currently produces x86_64 kernels, so this compatibility matrix
 runs on amd64. The regular build and integration workflows separately compile

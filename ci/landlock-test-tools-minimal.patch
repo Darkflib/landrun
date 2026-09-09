@@ -1,16 +1,20 @@
 diff --git a/guest/init.sh b/guest/init.sh
-index 7ce3a22..48bf6ec 100755
+index 7ce3a22..7f63199 100755
 --- a/guest/init.sh
 +++ b/guest/init.sh
-@@ -34,3 +34,3 @@ exit_poweroff() {
+@@ -31,7 +31,7 @@ exit_poweroff() {
+ 	if [[ -n "${TEST_RET:-}" ]]; then
+ 		echo "$1" > "${TEST_RET}"
+ 	fi
 -	exec poweroff -f
--	exit 1
 +	exec /usr/sbin/poweroff -f
-+	exit 1
+ 	exit 1
  }
-@@ -99,31 +99,23 @@
+ 
+@@ -98,25 +98,6 @@ if [[ ! -d /mnt ]]; then
+ fi
  mount -t tmpfs -o "mode=755,nosuid,nodev" tmpfs /mnt
--
+ 
 -if command -v diod >/dev/null; then
 -	mkdir /mnt/test-v9fs-src
 -	chmod 1777 /mnt/test-v9fs-src
@@ -31,34 +35,6 @@ index 7ce3a22..48bf6ec 100755
 -	echo "WARNING: Could not find the bindfs command." >&2
 -fi
 -
--DECODED_EXEC="$(printf "%s" "${TEST_EXEC}" | base64 -d)"
--SHELL_SH="$(dirname -- "${BASH_SOURCE[0]}")/shell.sh"
--
 +echo "[*] Skipping optional 9p and FUSE fixtures"
-+EXPECTED_ABI="${1:-}"
-+REPO_DIR="${2:-}"
-+echo "[*] Guest arguments: ABI=${EXPECTED_ABI:-missing} repo=${REPO_DIR:-missing}" >&2
-+sleep 1
-+case "${EXPECTED_ABI}" in
-+4 | 6 | 9 | 10) ;;
-+*)
-+	echo "ERROR: Unsupported ABI: ${EXPECTED_ABI}" >&2
-+	exit_poweroff 1
-+	;;
-+esac
-+if [[ -z "${REPO_DIR}" ]]; then
-+	echo "ERROR: Missing repository path" >&2
-+	exit_poweroff 1
-+fi
-+echo "[*] Launching ABI ${EXPECTED_ABI} boundary tests"
--echo "[*] Launching ${SHELL_SH} ${DECODED_EXEC}"
--
-+cd "${REPO_DIR}"
--RET=0
-+RET=0
--"${SHELL_SH}" "${DECODED_EXEC}" || RET=$?
--
-+setpriv --reuid "${TEST_UID}" --clear-groups -- \
-+	./ci/test-abi-boundary.sh "${EXPECTED_ABI}" || RET=$?
--echo "[*] Returned value: ${RET}"
-+echo "[*] Returned value: ${RET}"
+ DECODED_EXEC="$(printf "%s" "${TEST_EXEC}" | base64 -d)"
+ SHELL_SH="$(dirname -- "${BASH_SOURCE[0]}")/shell.sh"
