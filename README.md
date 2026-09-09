@@ -124,6 +124,7 @@ landrun [options] <command> [args...]
 - By default, no environment variables are passed to the sandboxed command. Use `--env` to explicitly pass environment variables
 - Standard input, output, and error are inherited. All other open file descriptors are closed on `exec` unless explicitly listed with `--preserve-fd`
 - Invalid policy and launcher/setup failures exit with status 125. Once the command is executed, its own exit status is preserved
+- A rule flag cannot be combined with its matching unrestricted-domain flag; for example, use either `--connect-tcp` rules or `--unrestricted-network`, not both
 - The `--best-effort` flag allows graceful degradation on older kernels that don't support all requested restrictions. Because the default target is Landlock ABI v9, you will usually want `--best-effort` unless you are on a very recent kernel
 - Paths can be specified either using multiple flags or as comma-separated values (e.g., `--ro /usr,/lib,/home`)
 - If no paths or network rules are specified and neither `--unrestricted-filesystem` nor `--unrestricted-network` is set, landrun applies the maximum filesystem and network restrictions supported by the selected Landlock ABI; IPC scoping is governed separately by `--unrestricted-scoped` (see the next point), and operations outside Landlock's scope remain unaffected
