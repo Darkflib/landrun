@@ -68,9 +68,12 @@ The reboot is therefore gated. Before rebooting, the script checks that:
   is kept at the old version by `--force-confold`, and a directive retired
   between the stable and sid openssh makes sshd refuse to start.
 - `ssh.service` or `ssh.socket` is enabled for the next boot.
-- A kernel image, a matching initrd, and a grub.cfg referencing a kernel exist.
-- Every `net.ifnames=`, `biosdevname=`, and `console=` token from the running
-  `/proc/cmdline` survives into the regenerated grub.cfg.
+- The entry GRUB will actually boot has its kernel and a same-version initrd on
+  disk, and carries every `net.ifnames=`, `biosdevname=`, and `console=` token
+  from the running `/proc/cmdline` on *its own* command line. Checking `grub.cfg`
+  as a whole is not equivalent: a token present only on a recovery or
+  previous-kernel entry would pass while the box boots without it. A
+  `GRUB_DEFAULT` other than `0` fails the check rather than being guessed at.
 - Every network interface present before the upgrade is still present.
 
 If any check fails the script writes `hold` and **does not reboot**. The box
@@ -88,8 +91,8 @@ live system, which is still the pre-reboot state, so it validates exactly what
 the conversion would have.
 
 Creating the completion marker by hand skips the gate altogether, which is the
-thing that stranded the box in the first place. Keep it for the case where you
-have looked at a failing check and decided it is wrong:
+one thing the gate exists to stop you doing. Keep it for the case where you have
+looked at a failing check and decided the check is wrong:
 
 ```bash
 touch /var/lib/stable-to-sid.done && systemctl reboot
