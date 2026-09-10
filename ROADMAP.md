@@ -155,8 +155,9 @@ behavior, negative tests, and documented limitations.
 
 - [x] Add `SECURITY.md` with a private vulnerability-reporting route and supported
   release policy.
-- Publish signed tags, checksums, and a software bill of materials for release
-  artifacts.
+- [x] Publish signed tags, checksums, and a software bill of materials for
+  release artifacts. The tag-gated workflow also publishes GitHub/Sigstore
+  build-provenance and SBOM attestations.
 - Generate artifacts only from protected tags after all required checks pass.
 - [x] Document which source revision and Go toolchain produced each artifact.
   CI forces and verifies Go VCS stamping, `landrun --version` reports both
