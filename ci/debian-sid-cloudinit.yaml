@@ -33,6 +33,19 @@ write_files:
       EXTRA_PACKAGES="build-essential git golang-go strace gdb pkg-config"
       ENSURE_LANDLOCK_LSM=1        # set 0 to leave the kernel cmdline alone
       WANT_DEB_SRC=0               # set 1 to add a deb-src stanza
+
+      # Console recovery. Cloud images ship with root locked, which leaves no
+      # way into the serial or emergency console if cloud-init fails to inject
+      # SSH keys. Generate a hash with:  openssl passwd -6
+      # Paste it between the SINGLE quotes below: a crypt hash is full of '$'
+      # and double quotes would let the shell eat it. Used for the console
+      # ONLY; SSH password authentication is never enabled by this file.
+      ROOT_PASSWORD_HASH=''
+
+      # cloud-init has no remaining job once the conversion is done, and sid's
+      # version stalls the boot. Set 0 to keep it active; see the snapshot note
+      # in docs/debian-sid-testbox.md before changing this.
+      DISABLE_CLOUD_INIT_AFTER=1
       # ------------------------------------------------------------------
 
       MARKER=/var/lib/stable-to-sid.done
@@ -68,6 +81,20 @@ write_files:
       OLD_IFACES=$(ip -br link | awk '{print $1}' | tr '\n' ' ')
       echo "pre-upgrade cmdline: $OLD_CMDLINE"
       echo "pre-upgrade links:   $OLD_IFACES"
+
+      # Console recovery, done first so it survives any later failure. If
+      # cloud-init breaks badly enough that SSH keys never land, this password
+      # on the serial console is the only way back into the box.
+      if [[ -n $ROOT_PASSWORD_HASH ]]; then
+        echo "root:$ROOT_PASSWORD_HASH" | chpasswd -e
+        echo "root password set for console recovery"
+      else
+        echo "!! ROOT_PASSWORD_HASH is empty: root stays locked, so the serial"
+        echo "!! console offers no way in if cloud-init fails to inject SSH keys."
+        echo "!! Generate one with 'openssl passwd -6' and set it in this file."
+      fi
+      # Make sure the serial console actually offers a login prompt to use it on.
+      systemctl enable serial-getty@ttyS0.service >/dev/null 2>&1 || true
 
       # 1. Stop the periodic apt jobs fighting us for the dpkg lock, and keep
       #    unattended-upgrades from silently tracking sid afterwards.
@@ -110,14 +137,19 @@ write_files:
         echo "!! could not determine the active cloud-init datasource; not pinning"
       fi
 
-      #    cloud-init-local.service ships with no start timeout, so a datasource
-      #    that never answers hangs the boot rather than failing it. On a test
-      #    box, booting without cloud-init's blessing beats not booting.
-      install -d -m 0755 /etc/systemd/system/cloud-init-local.service.d
-      cat > /etc/systemd/system/cloud-init-local.service.d/10-timeout.conf <<'EOF'
+      #    The cloud-init stage units ship with no start timeout, so a stage
+      #    that never completes hangs the boot rather than failing it. Bounding
+      #    only the local stage just moves the stall to the next one, so bound
+      #    every stage. On a test box, booting without cloud-init's blessing
+      #    beats not booting.
+      for unit in cloud-init-main cloud-init-local cloud-init-network \
+                  cloud-init cloud-config cloud-final; do
+        install -d -m 0755 "/etc/systemd/system/${unit}.service.d"
+        cat > "/etc/systemd/system/${unit}.service.d/10-timeout.conf" <<'EOF'
       [Service]
       TimeoutStartSec=120
       EOF
+      done
 
       # 4. Fold /etc/default/grub.d into /etc/default/grub. grub 2.14 drops that
       #    directory, and on a cloud image it is where console= and net.ifnames=0
@@ -277,6 +309,14 @@ write_files:
         echo "!!!   touch $MARKER && systemctl reboot"
         echo hold > "$STATE"
         exit 1
+      fi
+
+      # cloud-init has done everything it will ever do for this box: hostname is
+      # set, SSH keys are on disk, and this script has run. Keeping it enabled
+      # only adds a boot dependency on a package that sid keeps moving.
+      if [[ $DISABLE_CLOUD_INIT_AFTER == 1 ]]; then
+        echo "disabling cloud-init for subsequent boots"
+        touch /etc/cloud/cloud-init.disabled
       fi
 
       touch "$MARKER"

@@ -93,22 +93,36 @@ names the old interface. The script folds those files into `/etc/default/grub`
 and pins the tokens explicitly before the upgrade, then verifies them in the
 gate.
 
-**cloud-init stalls in the pre-network local stage.** After the reboot the
-console sits on `Job cloud-init-local.service/start running (3min 59s / no
-limit)` before eventually proceeding. That stage is datasource discovery: the
+**cloud-init stalls the boot after the upgrade.** The console sits on `Job
+cloud-init-local.service/start running (3min 59s / no limit)` before eventually
+proceeding.
+
+Pinning the datasource does not fix this. It was the obvious first theory — the
 sid cloud-init re-asks its debconf question, and answering non-interactively
-takes the full default probe list, so it works through datasources that will
-never answer. Three guards apply. The script reads the datasource actually in
-use from `/var/lib/cloud/instance/datasource` and pins that one in
-`/etc/cloud/cloud.cfg.d/99-datasource.cfg`; for the network-metadata
-datasources it also bounds `max_wait`, `timeout`, and `retries`; and it adds a
-`TimeoutStartSec=120` drop-in for `cloud-init-local.service`, which ships with
-no start timeout at all. The unit failing is recoverable, whereas a boot that
-hangs on it is not distinguishable from a dead machine.
+takes the full default probe list — but a run with the active datasource pinned
+in `/etc/cloud/cloud.cfg.d/99-datasource.cfg` and its metadata wait bounded
+stalled in exactly the same place. The cause is inside cloud-init 26.x, which
+now drives its stages against a `cloud-init-main.service` single process, not in
+the datasource list. The pin is kept because it is harmless and removes one
+variable, but it is not the remedy.
+
+Two things actually contain it. Every cloud-init stage unit gets a
+`TimeoutStartSec=120` drop-in, because they ship with no start timeout at all;
+bounding only the local stage is not enough, since the stall simply reappears in
+`cloud-init-network.service`. And once the conversion is finished, cloud-init is
+disabled outright through `/etc/cloud/cloud-init.disabled`. It has nothing left
+to do on this box, and leaving it enabled makes every boot depend on a package
+that sid keeps moving.
+
+A stage timing out is recoverable; a boot that hangs is indistinguishable from a
+dead machine from the outside. SSH still comes up in the timed-out case, because
+the keys were written to disk on the first boot and cloud-init failing later
+does not remove them.
 
 Note that the stall is not a networking fault and the interface is not renamed —
-a Scaleway instance comes up on `ens2` before and after. The grub guard above is
-insurance against a different failure, not the cause of this one.
+a Scaleway instance comes up on `ens2` before and after, and systemd-networkd
+brings the network up normally once the failed stage is out of the way. The grub
+guard above is insurance against a different failure, not the cause of this one.
 
 The journal is also made persistent before the upgrade, so a boot that does fail
 leaves evidence behind.
@@ -120,6 +134,23 @@ assuming it is dead — a long `cloud-init-local.service` stall looks identical 
 a hang from outside. Both the old and the new kernel remain in the grub menu, so
 booting the previous kernel is available from the console if the new one is at
 fault.
+
+The console is only useful if you can log in on it, and cloud images ship with
+root locked. Set `ROOT_PASSWORD_HASH` in the cloud-init before provisioning:
+
+```bash
+openssl passwd -6
+```
+
+Paste the result between the single quotes in the knobs block. It has to be
+single quotes — a crypt hash is full of `$`, and inside double quotes the shell
+eats it silently, leaving an empty value and a locked account. The password is
+applied before anything else the script does, so it survives every later
+failure, and it is used for the serial and emergency console only. SSH password
+authentication is never enabled.
+
+Leaving the hash empty is a supported choice, and the script says so loudly in
+the log rather than failing. It just means the console is decorative.
 
 Scaleway rescue mode, or attaching the volume to a second instance, is the
 reliable path when the console is not usable. For a disposable test box,
@@ -163,3 +194,11 @@ Once the box is converted, take a Scaleway snapshot. It saves repeating the
 conversion on every subsequent spin-up, and it pins the exact sid state a result
 was observed against, which matters because sid moves underneath you. The apt
 timers and `unattended-upgrades` are disabled by the conversion for that reason.
+
+One consequence to know about before you snapshot: the conversion disables
+cloud-init, so an instance created from that snapshot will not have keys
+injected into it. The `authorized_keys` written on the original box's first boot
+is baked into the snapshot and keeps working, so this is invisible as long as
+you use the same key. If you need key injection on snapshot-derived instances,
+set `DISABLE_CLOUD_INIT_AFTER=0` and accept the boot stall, or delete
+`/etc/cloud/cloud-init.disabled` before taking the snapshot.
