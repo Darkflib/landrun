@@ -5,7 +5,13 @@ semantics, and minimum Landlock ABI changes are called out explicitly.
 
 ## [Unreleased]
 
-## [0.1.18] - 2026-09-10
+## [0.1.19] - 2026-09-10
+
+Version 0.1.18 was tagged but never published. Its release run failed on a
+malformed action pin in the release workflow before building anything, and the
+release-tag immutability ruleset intentionally prevents reusing that tag. No
+artifacts, checksums, or attestations exist for 0.1.18, and the contents below
+are what 0.1.18 would have contained.
 
 ### Security
 
@@ -77,6 +83,6 @@ semantics, and minimum Landlock ABI changes are called out explicitly.
 - Upgraded to `go-landlock` v0.9.0 and added Landlock ABI 9 support, including
   pathname UNIX-socket access control.
 
-[Unreleased]: https://github.com/Darkflib/landrun/compare/v0.1.18...HEAD
-[0.1.18]: https://github.com/Darkflib/landrun/tree/v0.1.18
+[Unreleased]: https://github.com/Darkflib/landrun/compare/v0.1.19...HEAD
+[0.1.19]: https://github.com/Darkflib/landrun/tree/v0.1.19
 [0.1.17]: https://github.com/Darkflib/landrun/tree/v0.1.17
