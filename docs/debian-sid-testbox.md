@@ -127,16 +127,35 @@ re-provisioning is usually faster than repairing.
 
 ## Running the checks
 
-The box carries a Go toolchain and build tooling. Build and run the normal
-suites against the sid kernel:
+The box carries a Go toolchain and build tooling. Build the way CI does, so the
+result is comparable to the matrix:
 
 ```bash
-go build -o landrun ./cmd/landrun && ./landrun --probe-json
+CGO_ENABLED=0 go build -trimpath -o landrun ./cmd/landrun && ./landrun --probe-json
 ```
 
+Set `CGO_ENABLED` explicitly. The build, release, and ABI matrix workflows all
+pin it to `0`, but a plain `go build` on this box defaults to `1` because a C
+toolchain is present, and that is not the same binary. `libcap/psx` compiles its
+pure-Go path under `CGO_ENABLED=0` and its C path under `CGO_ENABLED=1`, and
+those are different mechanisms for applying a syscall across every thread — the
+behavior the effective-policy record reports as `thread_synchronized`.
+
+That makes the cgo build worth running here deliberately, as a second pass, and
+not by accident as the first one. No CI job builds it, so this box is the only
+place it gets exercised:
+
+```bash
+CGO_ENABLED=1 go build -trimpath -o landrun-cgo ./cmd/landrun && ./landrun-cgo --probe-json
+```
+
+A divergence between the two on the same kernel is a finding about landrun, not
+about sid, and belongs in the matrix rather than here.
+
 `ci/test-abi-boundary.sh` takes the expected ABI as its argument, so run it with
-whatever the probe reports rather than assuming. The same effective-policy
-assertions the matrix makes then apply here. Anything that fails on this box and
+whatever the probe reports rather than assuming. It also expects the binary at
+`./landrun`. The same effective-policy assertions the matrix makes then apply
+here. Anything that fails on this box and
 not in the matrix is a userland or distribution-configuration difference, and is
 worth pinning as a matrix case before it reaches a release.
 
