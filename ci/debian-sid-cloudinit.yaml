@@ -22,7 +22,7 @@ package_upgrade: false
 write_files:
   - path: /usr/local/sbin/stable-to-sid
     owner: root:root
-    permissions: '0755'
+    permissions: '0700'
     content: |
       #!/bin/bash
       set -euo pipefail
