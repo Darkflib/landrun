@@ -107,9 +107,11 @@ write_files:
       systemd-tmpfiles --create --prefix /var/log/journal >/dev/null 2>&1 || true
 
       # 3. Pin cloud-init to the datasource actually in use, and bound how long
-      #    it may spend looking. The sid cloud-init re-asks its debconf question
-      #    non-interactively and can come back with the full default probe list,
-      #    which costs minutes in cloud-init-local.service on every later boot.
+      #    it may spend looking. This does NOT fix the post-upgrade boot stall --
+      #    a run with it in place stalled identically, so the cause is inside
+      #    cloud-init 26.x, not the datasource list. Kept as a cheap control that
+      #    removes one variable. The stall is contained by the stage timeouts
+      #    below and by disabling cloud-init once the conversion is done.
       ds_file=/var/lib/cloud/instance/datasource
       if [[ -r $ds_file ]]; then
         ds_raw=$(awk -F: '{print $1}' "$ds_file" | tr -d '[:space:]')

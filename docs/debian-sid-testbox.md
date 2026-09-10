@@ -83,15 +83,22 @@ touch /var/lib/stable-to-sid.done && systemctl reboot
 
 ## Known upgrade hazards
 
-Two problems observed converting a trixie image on 2026-09-10, both now guarded:
+Both were seen converting a trixie image on 2026-09-10. Only the second one
+actually cost anything; the first is latent, and guarded on principle.
 
 **grub 2.14 drops `/etc/default/grub.d`.** The upgrade logs `cannot delete old
-directory '/etc/default/grub.d': Directory not empty`. On a cloud image that
-directory is where `console=ttyS0` and `net.ifnames=0` live. Losing
+directory '/etc/default/grub.d': Directory not empty`. On cloud images that
+directory is where `console=` and `net.ifnames=0` settings live, and losing
 `net.ifnames=0` renames the NIC, which strands a box whose network configuration
-names the old interface. The script folds those files into `/etc/default/grub`
-and pins the tokens explicitly before the upgrade, then verifies them in the
-gate.
+names the old interface.
+
+That did not happen here. A Scaleway trixie image uses predictable naming and
+comes up on `ens2` either way, so the gate found only `console=` tokens to
+preserve and the guard was a no-op. It is kept because the failure it prevents
+is unrecoverable without console access, and the cost of carrying it is a
+concatenated file. The script folds `/etc/default/grub.d/*.cfg` into
+`/etc/default/grub` and pins the tokens explicitly before the upgrade, then
+verifies they survived into the regenerated `grub.cfg`.
 
 **cloud-init stalls the boot after the upgrade.** The console sits on `Job
 cloud-init-local.service/start running (3min 59s / no limit)` before eventually
@@ -220,9 +227,13 @@ On 2026-09-10, kernel `7.1.13+deb14-cloud-amd64` with glibc 2.43-5:
   granting `/etc/ld.so.cache`, `libc.so.6`, the named shared objects, and
   `/lib64/ld-linux-x86-64.so.2`.
 
-No regressions found. Anything that fails on this box and
-not in the matrix is a userland or distribution-configuration difference, and is
-worth pinning as a matrix case before it reaches a release.
+No regressions found.
+
+Anything that fails here but not in the matrix is a userland or
+distribution-configuration difference. Reproduce it as a pinned matrix case
+before it reaches a release rather than treating this box as the evidence.
+
+## Snapshotting
 
 Once the box is converted, take a Scaleway snapshot. It saves repeating the
 conversion on every subsequent spin-up, and it pins the exact sid state a result
