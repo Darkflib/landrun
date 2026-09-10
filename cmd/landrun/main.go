@@ -57,6 +57,11 @@ func newCommand() *cli.Command {
 				Value:   "error",
 				Sources: cli.EnvVars("LANDRUN_LOG_LEVEL"),
 			},
+			&cli.StringFlag{
+				Name:     "policy",
+				Usage:    "Load policy options from this versioned JSON file",
+				OnlyOnce: true,
+			},
 			&cli.StringSliceFlag{
 				Name:  "ro",
 				Usage: "Allow read-only access to this path",
@@ -158,22 +163,25 @@ func newCommand() *cli.Command {
 			if len(args) == 0 {
 				return errors.New("missing command to run")
 			}
-			preservedDescriptors := c.IntSlice("preserve-fd")
+
+			policy := launchPolicy{}
+			if c.IsSet("policy") {
+				policyPath := c.String("policy")
+				if policyPath == "" {
+					return errors.New("policy file path must not be empty")
+				}
+				filePolicy, err := loadPolicyFile(policyPath)
+				if err != nil {
+					return fmt.Errorf("invalid policy file %q: %w", policyPath, err)
+				}
+				policy = filePolicy
+			}
+			policy = mergeLaunchPolicies(policy, policyFromCommand(c))
+
+			preservedDescriptors := policy.PreserveDescriptors
 			if err := exec.ValidateInheritedDescriptors(preservedDescriptors); err != nil {
 				return fmt.Errorf("invalid inherited descriptors: %w", err)
 			}
-
-			// Combine --ro and --rox paths for read-only access
-			readOnlyPaths := append([]string{}, c.StringSlice("ro")...)
-			readOnlyPaths = append(readOnlyPaths, c.StringSlice("rox")...)
-
-			// Combine --rw and --rwx paths for read-write access
-			readWritePaths := append([]string{}, c.StringSlice("rw")...)
-			readWritePaths = append(readWritePaths, c.StringSlice("rwx")...)
-
-			// Combine --rox and --rwx paths for executable permissions
-			readOnlyExecutablePaths := append([]string{}, c.StringSlice("rox")...)
-			readWriteExecutablePaths := append([]string{}, c.StringSlice("rwx")...)
 
 			binary, err := osexec.LookPath(args[0])
 			if err != nil {
@@ -186,44 +194,26 @@ func newCommand() *cli.Command {
 			defer executable.Close()
 
 			// Add command to readOnlyExecutablePaths
-			if c.Bool("add-exec") {
-				readOnlyExecutablePaths = append(readOnlyExecutablePaths, binary)
+			if policy.AddExecutable {
+				policy.Sandbox.ReadOnlyExecutablePaths = append(policy.Sandbox.ReadOnlyExecutablePaths, binary)
 				log.Debug("Added executable path: %v", binary)
 			}
 
 			// If --ldd flag is set, detect and add library dependencies
-			if c.Bool("ldd") {
+			if policy.ResolveLibraries {
 				libPaths, err := elfdeps.GetLibraryDependencies(binary)
 				if err != nil {
 					return fmt.Errorf("failed to detect library dependencies: %w", err)
 				}
 				// Add library directories to readOnlyExecutablePaths
-				readOnlyExecutablePaths = append(readOnlyExecutablePaths, libPaths...)
+				policy.Sandbox.ReadOnlyExecutablePaths = append(policy.Sandbox.ReadOnlyExecutablePaths, libPaths...)
 				log.Debug("Added library paths: %v", libPaths)
 			}
 
-			cfg := sandbox.Config{
-				ReadOnlyPaths:            readOnlyPaths,
-				ReadWritePaths:           readWritePaths,
-				ReadOnlyExecutablePaths:  readOnlyExecutablePaths,
-				ReadWriteExecutablePaths: readWriteExecutablePaths,
-				UnixSocketPaths:          c.StringSlice("unix"),
-				BindTCPPorts:             c.IntSlice("bind-tcp"),
-				ConnectTCPPorts:          c.IntSlice("connect-tcp"),
-				BestEffort:               c.Bool("best-effort"),
-				UnrestrictedFilesystem:   c.Bool("unrestricted-filesystem"),
-				UnrestrictedNetwork:      c.Bool("unrestricted-network"),
-				UnrestrictedScoped:       c.Bool("unrestricted-scoped"),
-				IgnoreMissingPaths:       c.Bool("ignore-missing"),
-				DisableLogOriginating:    c.Bool("log-disable-originating"),
-				EnableLogSubprocesses:    c.Bool("log-enable-subprocesses"),
-				DisableLogSubdomains:     c.Bool("log-disable-subdomains"),
-			}
-
 			// Process environment variables
-			envVars := processEnvironmentVars(c.StringSlice("env"))
+			envVars := processEnvironmentVars(policy.Environment)
 
-			if err := sandbox.Apply(cfg); err != nil {
+			if err := sandbox.Apply(policy.Sandbox); err != nil {
 				return fmt.Errorf("failed to apply sandbox: %w", err)
 			}
 			if err := exec.PrepareInheritedDescriptors(preservedDescriptors); err != nil {
@@ -235,6 +225,34 @@ func newCommand() *cli.Command {
 			}
 			return nil
 		},
+	}
+}
+
+func policyFromCommand(c *cli.Command) launchPolicy {
+	readOnlyExecutable := c.StringSlice("rox")
+	readWriteExecutable := c.StringSlice("rwx")
+	return launchPolicy{
+		Sandbox: sandbox.Config{
+			ReadOnlyPaths:            joinSlices(c.StringSlice("ro"), readOnlyExecutable),
+			ReadWritePaths:           joinSlices(c.StringSlice("rw"), readWriteExecutable),
+			ReadOnlyExecutablePaths:  append([]string(nil), readOnlyExecutable...),
+			ReadWriteExecutablePaths: append([]string(nil), readWriteExecutable...),
+			UnixSocketPaths:          c.StringSlice("unix"),
+			BindTCPPorts:             c.IntSlice("bind-tcp"),
+			ConnectTCPPorts:          c.IntSlice("connect-tcp"),
+			BestEffort:               c.Bool("best-effort"),
+			UnrestrictedFilesystem:   c.Bool("unrestricted-filesystem"),
+			UnrestrictedNetwork:      c.Bool("unrestricted-network"),
+			UnrestrictedScoped:       c.Bool("unrestricted-scoped"),
+			IgnoreMissingPaths:       c.Bool("ignore-missing"),
+			DisableLogOriginating:    c.Bool("log-disable-originating"),
+			EnableLogSubprocesses:    c.Bool("log-enable-subprocesses"),
+			DisableLogSubdomains:     c.Bool("log-disable-subdomains"),
+		},
+		Environment:         c.StringSlice("env"),
+		PreserveDescriptors: c.IntSlice("preserve-fd"),
+		ResolveLibraries:    c.Bool("ldd"),
+		AddExecutable:       c.Bool("add-exec"),
 	}
 }
 

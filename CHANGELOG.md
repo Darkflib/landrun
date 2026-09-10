@@ -24,6 +24,9 @@ semantics, and minimum Landlock ABI changes are called out explicitly.
 
 ### Added
 
+- Added strict, versioned JSON policy files via `--policy`. Version 1 maps to
+  the existing CLI policy contract and composes additively with explicit flags;
+  unknown, duplicate, null, oversized, and unsupported input is rejected.
 - Added `--probe` and `--probe-json` for inspecting the running kernel's
   Landlock ABI.
 - Added effective-policy reporting to debug output, including the kernel ABI,

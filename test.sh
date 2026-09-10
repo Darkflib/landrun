@@ -63,7 +63,7 @@ print_error() {
 if [ "$USE_SYSTEM_BINARY" = false ]; then
 	if [ "$NO_BUILD" = false ]; then
 		print_status "Building landrun binary..."
-		if ! go build -o landrun cmd/landrun/main.go; then
+		if ! go build -o landrun ./cmd/landrun; then
 			print_error "Failed to build landrun binary"
 			exit 1
 		fi
@@ -218,6 +218,21 @@ run_test_strict() {
 
 # Test cases
 print_status "Starting test cases..."
+
+# Policy-file tests
+POLICY_FILE="cmd/landrun/testdata/policy-compose.json"
+
+run_test "Policy file grants read and executable dependencies" \
+    "./landrun --log-level debug --policy $POLICY_FILE -- cat $RO_DIR/test.txt" \
+    0
+
+run_test "Policy file composes with CLI grants" \
+    "./landrun --log-level debug --policy $POLICY_FILE --rw $RW_DIR -- touch $RW_DIR/policy-created.txt" \
+    0
+
+run_test "Policy file preserves read-only denial" \
+    "./landrun --log-level debug --policy $POLICY_FILE -- touch $RO_DIR/policy-denied.txt" \
+    1
 
 # Basic access tests
 run_test "Read-only access to file" \
