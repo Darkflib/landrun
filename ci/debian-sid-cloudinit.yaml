@@ -52,10 +52,19 @@ write_files:
       STATE=/var/lib/stable-to-sid.state
       LOG=/var/log/stable-to-sid.log
 
+      # stable-to-sid           convert, then gate and reboot (cloud-init path)
+      # stable-to-sid recheck   re-run the pre-reboot gate after repairing a
+      #                         held conversion, rebooting only if it passes
+      MODE="${1:-convert}"
+      case "$MODE" in
+        convert|recheck) ;;
+        *) echo "usage: $0 [recheck]" >&2; exit 2 ;;
+      esac
+
       exec > >(tee -a "$LOG") 2>&1
       trap 'rc=$?; echo "!!! failed at line $LINENO (exit $rc)"; echo fail > "$STATE"' ERR
 
-      if [[ -e $MARKER ]]; then
+      if [[ $MODE == convert && -e $MARKER ]]; then
         echo "already converted, nothing to do"
         exit 0
       fi
@@ -77,10 +86,145 @@ write_files:
       # Record the pre-upgrade boot state. Several of the checks below compare
       # against this, because the upgrade can silently drop settings that only
       # existed in packaging that sid has since restructured.
+      # PRESERVE is computed here rather than next to the grub edits so that
+      # 'recheck' validates the same tokens. Pre-reboot these all still read the
+      # old kernel's state, so a recheck derives them identically.
       OLD_CMDLINE=$(cat /proc/cmdline)
       OLD_IFACES=$(ip -br link | awk '{print $1}' | tr '\n' ' ')
+      PRESERVE=""
+      for tok in $OLD_CMDLINE; do
+        case "$tok" in
+          net.ifnames=*|biosdevname=*|console=*) PRESERVE="$PRESERVE $tok" ;;
+        esac
+      done
       echo "pre-upgrade cmdline: $OLD_CMDLINE"
       echo "pre-upgrade links:   $OLD_IFACES"
+
+      gate_fail=0
+      gate() {
+        local what="$1"; shift
+        if "$@" >/dev/null 2>&1; then
+          echo "  OK    $what"
+        else
+          echo "  FAIL  $what"
+          gate_fail=1
+        fi
+      }
+
+      # grub.cfg may name paths relative to a separate /boot partition. $2 is a
+      # root prefix, empty on a real system and set only by the test fixtures.
+      resolve_boot_path() {
+        local p="$1" root="${2:-}"
+        [[ -n $p ]] || return 1
+        [[ -e $root$p ]] && { echo "$root$p"; return 0; }
+        [[ -e $root/boot$p ]] && { echo "$root/boot$p"; return 0; }
+        return 1
+      }
+
+      same_version() { [[ -n $1 && $1 == "$2" ]]; }
+
+      # Validate the entry grub will actually boot. Globbing /boot passes when
+      # only the OLD kernel survives, and grepping the whole grub.cfg passes
+      # when a token appears only on a recovery or previous-kernel entry, so
+      # neither is a real check. Arguments default to the live system and exist
+      # so this can be exercised against fixtures.
+      check_default_entry() {
+        local cfg="${1:-/boot/grub/grub.cfg}"
+        local grub_default="${2-$( (. /etc/default/grub 2>/dev/null; echo "${GRUB_DEFAULT:-0}") )}"
+        local root="${3:-}"
+        local linux_line kpath ipath kfile ifile kver iver tok
+
+        if [[ $grub_default != 0 ]]; then
+          echo "  FAIL  GRUB_DEFAULT is '$grub_default'; this gate only resolves entry 0"
+          gate_fail=1
+          return 1
+        fi
+        if [[ ! -r $cfg ]]; then
+          echo "  FAIL  $cfg is missing or unreadable"
+          gate_fail=1
+          return 1
+        fi
+
+        linux_line=$(awk '$1 ~ /^linux(16|efi)?$/ {print; exit}' "$cfg")
+        kpath=$(awk '{print $2}' <<<"$linux_line")
+        ipath=$(awk '$1 ~ /^initrd(16|efi)?$/ {print $2; exit}' "$cfg")
+        kfile=$(resolve_boot_path "$kpath" "$root") || kfile=""
+        ifile=$(resolve_boot_path "$ipath" "$root") || ifile=""
+        kver=${kpath##*/vmlinuz-}
+        iver=${ipath##*/initrd.img-}
+
+        echo "  default entry kernel: ${kpath:-<none>}"
+        echo "  default entry initrd: ${ipath:-<none>}"
+        gate "default entry's kernel exists on disk" test -n "$kfile"
+        gate "default entry's initrd exists on disk" test -n "$ifile"
+        gate "default entry's initrd matches its kernel (${kver:-?})" \
+          same_version "$kver" "$iver"
+        for tok in $PRESERVE; do
+          gate "token on the default entry's command line: $tok" \
+            grep -qF -- "$tok" <<<"$linux_line"
+        done
+      }
+
+      run_gate() {
+        echo "--- pre-reboot checks ---"
+        gate_fail=0
+
+        local sshd_bin
+        sshd_bin=$(command -v sshd || echo /usr/sbin/sshd)
+        # sshd_config is kept at the old version by --force-confold; a directive
+        # retired between the stable and sid openssh makes sshd refuse to start.
+        gate "sshd config parses under the new openssh" "$sshd_bin" -t
+        gate "ssh is enabled for next boot" \
+          bash -c 'systemctl is-enabled ssh.service || systemctl is-enabled ssh.socket'
+
+        check_default_entry
+
+        local iface
+        for iface in $OLD_IFACES; do
+          [[ $iface == lo ]] && continue
+          gate "interface still present: $iface" ip link show "$iface"
+        done
+
+        [[ $gate_fail -eq 0 ]]
+      }
+
+      finish_and_reboot() {
+        # cloud-init has done everything it will ever do for this box: hostname
+        # is set, SSH keys are on disk, and this script has run. Keeping it
+        # enabled only adds a boot dependency on a package sid keeps moving.
+        if [[ $DISABLE_CLOUD_INIT_AFTER == 1 ]]; then
+          echo "disabling cloud-init for subsequent boots"
+          touch /etc/cloud/cloud-init.disabled
+        fi
+        touch "$MARKER"
+        echo ok > "$STATE"
+        sync
+        # Reboot out of band so we don't deadlock stopping our own transient unit.
+        echo "all checks passed; rebooting in 5s"
+        systemd-run --on-active=5 --timer-property=AccuracySec=1s systemctl reboot \
+          || { sleep 5; systemctl reboot; }
+      }
+
+      gate_then_reboot() {
+        if ! run_gate; then
+          echo
+          echo "!!! pre-reboot checks FAILED - holding the reboot."
+          echo "!!! the box is still on sid and still reachable. Fix the failures,"
+          echo "!!! then re-run the gate rather than rebooting blind:"
+          echo "!!!   /usr/local/sbin/stable-to-sid recheck"
+          echo "!!! That reboots only if every check passes. Forcing the marker"
+          echo "!!! (touch $MARKER) skips the gate entirely; last resort only."
+          echo hold > "$STATE"
+          exit 1
+        fi
+        finish_and_reboot
+      }
+
+      if [[ $MODE == recheck ]]; then
+        echo "=== $(date -Is) recheck: re-running the pre-reboot gate only ==="
+        gate_then_reboot
+        exit 0
+      fi
 
       # Console recovery, done first so it survives any later failure. If
       # cloud-init breaks badly enough that SSH keys never land, this password
@@ -93,6 +237,16 @@ write_files:
         echo "!! console offers no way in if cloud-init fails to inject SSH keys."
         echo "!! Generate one with 'openssl passwd -6' and set it in this file."
       fi
+      # cloud-init keeps its own copy of this file. If a hash is embedded, keep
+      # those copies root-only too. Note this does NOT contain the hash on
+      # Scaleway: the metadata service serves user-data to any process on the
+      # instance, so treat the console password as throwaway and reuse it
+      # nowhere. See docs/debian-sid-testbox.md.
+      if [[ -n $ROOT_PASSWORD_HASH ]]; then
+        chmod 0600 /var/lib/cloud/instance/user-data.txt* \
+                   /var/lib/cloud/instances/*/user-data.txt* 2>/dev/null || true
+      fi
+
       # Make sure the serial console actually offers a login prompt to use it on.
       systemctl enable serial-getty@ttyS0.service >/dev/null 2>&1 || true
 
@@ -167,13 +321,8 @@ write_files:
       fi
 
       # Pin the boot settings that govern interface naming and console output
-      # directly, whatever supplied them before.
-      PRESERVE=""
-      for tok in $OLD_CMDLINE; do
-        case "$tok" in
-          net.ifnames=*|biosdevname=*|console=*) PRESERVE="$PRESERVE $tok" ;;
-        esac
-      done
+      # directly, whatever supplied them before. PRESERVE was computed near the
+      # top so that 'recheck' validates exactly the same token list.
       if [[ -n $PRESERVE ]]; then
         echo "pinning kernel cmdline tokens:$PRESERVE"
         {
@@ -270,65 +419,10 @@ write_files:
       dpkg-query -W -f='${Version}\n' libc6 2>/dev/null | sed 's/^/glibc: /' || true
       dpkg-query -W -f='${Package} ${Version}\n' 'linux-image-*' 2>/dev/null | sed 's/^/kernel: /' || true
 
-      # 11. Pre-reboot gate. Everything below decides whether this box comes
-      #     back on the network. A failure here holds the reboot rather than
-      #     spending the only working shell we have.
-      echo "--- pre-reboot checks ---"
-      gate_fail=0
-      gate() {
-        local what="$1"; shift
-        if "$@" >/dev/null 2>&1; then
-          echo "  OK    $what"
-        else
-          echo "  FAIL  $what"
-          gate_fail=1
-        fi
-      }
-
-      sshd_bin=$(command -v sshd || echo /usr/sbin/sshd)
-      # sshd_config is kept at the old version by --force-confold; a directive
-      # retired between the stable and sid openssh makes sshd refuse to start.
-      gate "sshd config parses under the new openssh" "$sshd_bin" -t
-      gate "ssh is enabled for next boot" \
-        bash -c 'systemctl is-enabled ssh.service || systemctl is-enabled ssh.socket'
-      gate "a kernel image is installed" bash -c 'compgen -G "/boot/vmlinuz-*" >/dev/null'
-      gate "a matching initrd is installed" bash -c 'compgen -G "/boot/initrd.img-*" >/dev/null'
-      gate "grub.cfg references a kernel" grep -q vmlinuz /boot/grub/grub.cfg
-
-      for tok in $PRESERVE; do
-        gate "cmdline token survives into grub.cfg: $tok" grep -qF -- "$tok" /boot/grub/grub.cfg
-      done
-
-      for iface in $OLD_IFACES; do
-        [[ $iface == lo ]] && continue
-        gate "interface still present: $iface" ip link show "$iface"
-      done
-
-      if [[ $gate_fail -ne 0 ]]; then
-        echo
-        echo "!!! pre-reboot checks FAILED - holding the reboot."
-        echo "!!! the box is still on sid and still reachable; fix, then run:"
-        echo "!!!   touch $MARKER && systemctl reboot"
-        echo hold > "$STATE"
-        exit 1
-      fi
-
-      # cloud-init has done everything it will ever do for this box: hostname is
-      # set, SSH keys are on disk, and this script has run. Keeping it enabled
-      # only adds a boot dependency on a package that sid keeps moving.
-      if [[ $DISABLE_CLOUD_INIT_AFTER == 1 ]]; then
-        echo "disabling cloud-init for subsequent boots"
-        touch /etc/cloud/cloud-init.disabled
-      fi
-
-      touch "$MARKER"
-      echo ok > "$STATE"
-      sync
-
-      # Reboot out of band so we don't deadlock stopping our own transient unit.
-      echo "all checks passed; rebooting in 5s"
-      systemd-run --on-active=5 --timer-property=AccuracySec=1s systemctl reboot \
-        || { sleep 5; systemctl reboot; }
+      # 11. Pre-reboot gate. Everything it checks decides whether this box
+      #     comes back on the network, so a failure holds the reboot rather
+      #     than spending the only working shell we have.
+      gate_then_reboot
 
 runcmd:
   - systemd-run --unit=stable-to-sid --description="Debian stable to sid conversion" --no-block /usr/local/sbin/stable-to-sid

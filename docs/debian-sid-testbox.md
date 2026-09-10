@@ -75,7 +75,21 @@ The reboot is therefore gated. Before rebooting, the script checks that:
 
 If any check fails the script writes `hold` and **does not reboot**. The box
 stays on sid and stays reachable, which is the only state from which the problem
-can be diagnosed cheaply. Fix it, then:
+can be diagnosed cheaply. Fix the failure, then re-run the gate rather than
+rebooting blind:
+
+```bash
+/usr/local/sbin/stable-to-sid recheck
+```
+
+`recheck` runs the pre-reboot checks only, and reboots if every one passes. It
+recomputes the preserved command-line tokens and the interface list from the
+live system, which is still the pre-reboot state, so it validates exactly what
+the conversion would have.
+
+Creating the completion marker by hand skips the gate altogether, which is the
+thing that stranded the box in the first place. Keep it for the case where you
+have looked at a failing check and decided it is wrong:
 
 ```bash
 touch /var/lib/stable-to-sid.done && systemctl reboot
@@ -156,6 +170,13 @@ applied before anything else the script does, so it survives every later
 failure, and it is used for the serial and emergency console only. SSH password
 authentication is never enabled.
 
+Use a throwaway password. The script is written `0700` and the conversion also
+tightens cloud-init's own copies of the user-data, but neither of those contains
+the hash: the instance metadata service serves user-data back to any process on
+the box, so an unprivileged local user can read it whatever the file modes say.
+That is inherent to putting a secret in cloud-init user-data rather than
+something this file can fix, so do not reuse a password from anywhere else.
+
 Leaving the hash empty is a supported choice, and the script says so loudly in
 the log rather than failing. It just means the console is decorative.
 
@@ -190,8 +211,13 @@ CGO_ENABLED=1 go build -trimpath -o landrun-cgo ./cmd/landrun && ./landrun-cgo -
 A divergence between the two on the same kernel is a finding about landrun, not
 about sid, and belongs in the matrix rather than here.
 
-`ci/test-abi-boundary.sh` takes the expected ABI as its argument, so run it with
-whatever the probe reports rather than assuming. It also expects the binary at
+`ci/test-abi-boundary.sh` takes the expected ABI as its argument and accepts
+only `4`, `6`, `9`, or `10`, the boundaries it has cases for. Pass what the probe
+reported, provided it is one of those. A probe reporting anything else is itself
+the finding rather than a value to pass in: the harness needs a boundary case for
+the new ABI first, and landrun needs the policy-contract review in
+[abi-testing.md](abi-testing.md#reviewing-new-rights-and-abis) before it exposes
+anything new. It also expects the binary at
 `./landrun`, and it assumes that binary is **static**: it sandboxes landrun with
 itself using `--rox ./landrun` alone, which is a sufficient policy only when
 there is no loader and no shared object to map. Pointed at a `CGO_ENABLED=1`
