@@ -185,8 +185,42 @@ about sid, and belongs in the matrix rather than here.
 
 `ci/test-abi-boundary.sh` takes the expected ABI as its argument, so run it with
 whatever the probe reports rather than assuming. It also expects the binary at
-`./landrun`. The same effective-policy assertions the matrix makes then apply
-here. Anything that fails on this box and
+`./landrun`, and it assumes that binary is **static**: it sandboxes landrun with
+itself using `--rox ./landrun` alone, which is a sufficient policy only when
+there is no loader and no shared object to map. Pointed at a `CGO_ENABLED=1`
+build the script fails at its first policy step with `failed to execute command:
+permission denied`, because the dynamic loader and libc need the execute right
+and nothing granted it. That is Landlock behaving correctly, not a regression.
+CI only ever builds static, so the assumption is safe there; just do not read
+that failure as a finding.
+
+To exercise a dynamic build, use landrun's own resolver rather than hand-written
+path grants:
+
+```bash
+./landrun-cgo --best-effort --add-exec --ldd -- ./landrun-cgo --probe-json
+```
+
+`--ldd` walks the ELF dependency graph, which makes it the interesting thing to
+run here: it is the part of landrun most exposed to a moving libc and a changing
+loader layout.
+
+## Results so far
+
+Recorded so the next run has something to compare against, not as a guarantee.
+
+On 2026-09-10, kernel `7.1.13+deb14-cloud-amd64` with glibc 2.43-5:
+
+- The probe reported ABI 9, matching the `Linux 7.1.y` row in the matrix.
+- `ci/test-abi-boundary.sh 9` passed in full against the static build.
+- The `CGO_ENABLED=0` and `CGO_ENABLED=1` builds produced byte-identical
+  effective-policy records, `thread_synchronized: true` in both. The psx code
+  path does not change the policy landrun applies on this kernel.
+- `--add-exec --ldd` resolved correctly against the sid loader layout,
+  granting `/etc/ld.so.cache`, `libc.so.6`, the named shared objects, and
+  `/lib64/ld-linux-x86-64.so.2`.
+
+No regressions found. Anything that fails on this box and
 not in the matrix is a userland or distribution-configuration difference, and is
 worth pinning as a matrix case before it reaches a release.
 
