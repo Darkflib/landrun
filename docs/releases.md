@@ -49,8 +49,16 @@ verified without trusting the downloadable bundle files.
 
 ## Verify a release
 
-Download the files for one release into an empty directory. Verify the checksum
-manifest before executing the binary:
+Download the files for one release into an empty directory. First verify
+GitHub's signed build provenance for the binary and checksum manifest; the
+checksum file is not independently trusted until its attestation succeeds:
+
+```bash
+gh attestation verify ./landrun-linux-amd64 --repo Darkflib/landrun
+gh attestation verify ./SHA256SUMS --repo Darkflib/landrun
+```
+
+Then use the authenticated manifest to verify every downloaded release asset:
 
 ```bash
 sha256sum --check SHA256SUMS
@@ -62,17 +70,11 @@ Inspect the embedded identity without running the binary if Go is installed:
 go version -m ./landrun-linux-amd64
 ```
 
-Or ask the binary to report its version, full source revision, and Go toolchain:
+Only after provenance and checksums verify, ask the binary to report its
+version, full source revision, and Go toolchain:
 
 ```bash
 ./landrun-linux-amd64 --version
-```
-
-Verify GitHub's signed build provenance for the binary and checksum manifest:
-
-```bash
-gh attestation verify ./landrun-linux-amd64 --repo Darkflib/landrun
-gh attestation verify ./SHA256SUMS --repo Darkflib/landrun
 ```
 
 The SBOM attestation associates `landrun.spdx.json` with both release binaries.
