@@ -19,7 +19,7 @@ import (
 )
 
 // Version is the current version of landrun
-const Version = "0.1.19"
+const Version = "0.1.20"
 
 // launcherErrorExitCode distinguishes landrun setup and policy failures from
 // the exit status of a command that was successfully executed.
