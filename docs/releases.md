@@ -18,8 +18,8 @@ arm64 artifacts.
    ```bash
    git switch main
    git pull --ff-only
-   git tag --sign v0.1.18 --message "landrun v0.1.18"
-   git push origin v0.1.18
+   git tag --sign v0.1.19 --message "landrun v0.1.19"
+   git push origin v0.1.19
    ```
 
 Two active repository rulesets protect `refs/tags/v*`:
@@ -111,8 +111,8 @@ result is needed.
 The signed source tag remains independently inspectable with `git verify-tag`:
 
 ```bash
-git fetch origin tag v0.1.18
-git verify-tag v0.1.18
+git fetch origin tag v0.1.19
+git verify-tag v0.1.19
 ```
 
 Verification establishes who authorized the source tag, which workflow built
