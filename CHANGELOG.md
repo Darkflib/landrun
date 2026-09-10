@@ -5,6 +5,8 @@ semantics, and minimum Landlock ABI changes are called out explicitly.
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-09-10
+
 ### Security
 
 - File descriptors 3 and above are now closed on execution unless explicitly
@@ -75,5 +77,6 @@ semantics, and minimum Landlock ABI changes are called out explicitly.
 - Upgraded to `go-landlock` v0.9.0 and added Landlock ABI 9 support, including
   pathname UNIX-socket access control.
 
-[Unreleased]: https://github.com/Darkflib/landrun/compare/v0.1.17...HEAD
+[Unreleased]: https://github.com/Darkflib/landrun/compare/v0.1.18...HEAD
+[0.1.18]: https://github.com/Darkflib/landrun/tree/v0.1.18
 [0.1.17]: https://github.com/Darkflib/landrun/tree/v0.1.17
