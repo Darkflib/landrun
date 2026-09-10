@@ -34,13 +34,26 @@ granting permission to rewrite it later.
 
 The release gate accepts exact `vMAJOR.MINOR.PATCH` names and pins the release
 signer's primary GPG fingerprint to
-`F6422E9F521C8EA3E540198425B3790094DC0CB7`. It rejects lightweight, unsigned,
+`7B9596CF4FF2DCB9C263C2E5691F96C9A78EA0C2`. It rejects lightweight, unsigned,
 invalidly signed, off-main, version-mismatched, or unchecked tags. Changing the
 trusted signing key requires a reviewed source change. The gate also verifies
 each ruleset's active state, tag target, exact pattern, and rule types before it
 builds. GitHub only returns bypass actors to ruleset administrators, so those
 entries require a separate settings audit; the signed-tag check remains the
 release authorization boundary.
+
+### Signing key history
+
+The pinned fingerprint changed on 2026-09-10. The previous key,
+`F6422E9F521C8EA3E540198425B3790094DC0CB7` (rsa4096, created 2018-04-11),
+expired on 2023-04-10 and its private half was lost, so it can neither sign nor
+have its expiry extended. No release was ever published under it, so nothing
+already distributed depends on it and no artefact needs re-signing.
+
+Rotating the key is deliberately a reviewed source change rather than a
+configuration toggle: the gate trusts the fingerprint in this repository, not
+whatever `github.com/Darkflib.gpg` happens to serve, so replacing the key on the
+GitHub account alone cannot change who is allowed to sign a release.
 
 After the gate, native amd64 and arm64 jobs rebuild and run the offline
 integration suite. The publication job then produces a SHA-256 manifest, an
