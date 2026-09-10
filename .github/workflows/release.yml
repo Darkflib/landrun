@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout signed tag
-        uses: actions/checkout@8e8c483db84e4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: "0"
           persist-credentials: false
@@ -53,7 +53,7 @@ jobs:
             arch: arm64
     steps:
       - name: Checkout signed tag
-        uses: actions/checkout@8e8c483db84e4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: "0"
           persist-credentials: false
@@ -98,7 +98,7 @@ jobs:
         run: mv landrun "dist/landrun-linux-${TARGET_ARCH}"
 
       - name: Upload release input
-        uses: actions/upload-artifact@b7c566a772e6b6fb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: release-linux-${{ matrix.arch }}
           path: dist/
@@ -116,7 +116,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout signed tag
-        uses: actions/checkout@8e8c483db84e4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: "0"
           persist-credentials: false
