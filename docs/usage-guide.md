@@ -9,6 +9,9 @@ certificate, name-service, and runtime-data paths vary between distributions.
 Use absolute command paths in long-lived policies and review every broad
 directory grant such as `--rox /usr`.
 
+For repeatable reviewed profiles, the same options can be stored in a strict,
+versioned [policy file](policy-files.md) while the command remains explicit.
+
 ## Check the host first
 
 Query the kernel's Landlock ABI before choosing features:

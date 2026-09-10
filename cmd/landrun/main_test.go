@@ -81,3 +81,17 @@ func TestRunReturnsLauncherErrorWhenCommandIsMissing(t *testing.T) {
 		t.Fatalf("run returned %d, want %d", got, launcherErrorExitCode)
 	}
 }
+
+func TestRunReturnsLauncherErrorForInvalidPolicyFile(t *testing.T) {
+	path := writePolicyFile(t, `{"version": 1, "unknown": true}`)
+	if got := run([]string{"landrun", "--policy", path, "--", "true"}); got != launcherErrorExitCode {
+		t.Fatalf("run returned %d, want %d", got, launcherErrorExitCode)
+	}
+}
+
+func TestRunReturnsLauncherErrorForRepeatedPolicyFile(t *testing.T) {
+	path := writePolicyFile(t, `{"version": 1}`)
+	if got := run([]string{"landrun", "--policy", path, "--policy", path, "--", "true"}); got != launcherErrorExitCode {
+		t.Fatalf("run returned %d, want %d", got, launcherErrorExitCode)
+	}
+}

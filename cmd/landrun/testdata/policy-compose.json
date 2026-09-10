@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "ro": ["test_env/ro"],
+  "best-effort": true,
+  "add-exec": true,
+  "ldd": true
+}

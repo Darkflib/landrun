@@ -128,6 +128,7 @@ landrun [options] <command> [args...]
 - `--connect-tcp <port>`: Allow connecting to a TCP port in the range 1-65535 (port 0 is rejected; can be specified multiple times or as comma-separated values)
 - `--env <var>`: Environment variable to pass to the sandboxed command (format: KEY=VALUE or just KEY to pass current value)
 - `--preserve-fd <fd>`: Preserve an already-open file descriptor numbered 3 or greater across `exec` (can be specified multiple times or as comma-separated values)
+- `--policy <path>`: Load policy options from a strict, versioned JSON file
 - `--best-effort`: Use best effort mode, falling back to less restrictive sandbox if necessary [default: disabled]
 - `--log-level <level>`: Set logging level (error, info, debug) [default: "error"]
 - `--unrestricted-network`: Allows unrestricted network access (disables all network restrictions)
@@ -176,12 +177,22 @@ See [Landlock audit logging](docs/audit-logging.md) for the ABI 7 flag
 semantics, unprivileged policy diagnostics, host audit commands, and the limits
 of denial logs as enforcement evidence.
 
+See [Policy files](docs/policy-files.md) for the version 1 JSON schema, strict
+parsing behavior, path semantics, and how file options compose with CLI flags.
+
 ### Quick examples
 
 Check the host's Landlock ABI:
 
 ```bash
 landrun --probe
+```
+
+Run an application with a reviewed policy file while keeping the command
+explicit:
+
+```bash
+landrun --policy ./landrun-policy.json -- ./application
 ```
 
 Run a command with one read-only input and one writable data directory:

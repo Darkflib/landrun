@@ -139,7 +139,9 @@ inferred from a single current kernel.
   implicitly in existing policy profiles. Exact handled-access sets and the
   maximum public policy ABI are pinned by unit and UML tests; the update process
   is documented in [ABI testing](docs/abi-testing.md#reviewing-new-rights-and-abis).
-- Add policy-file support only after the CLI policy contract is stable.
+- [x] Add policy-file support only after the CLI policy contract is stable.
+  Version 1 JSON maps directly to CLI policy flags, composes additively with
+  command-line options, and rejects ambiguous or unrecognized input.
 - [x] Add audit-log guidance and diagnostics without requiring privileged
   access. Landrun's effective-policy record reports applied audit flags; the
   operational and host-observability boundary is documented in
