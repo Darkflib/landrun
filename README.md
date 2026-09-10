@@ -59,7 +59,7 @@ go install github.com/zouuup/landrun/cmd/landrun@latest
 ```bash
 git clone https://github.com/zouuup/landrun.git
 cd landrun
-go build -o landrun cmd/landrun/main.go
+go build -o landrun ./cmd/landrun
 sudo cp landrun /usr/local/bin/
 ```
 

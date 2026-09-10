@@ -63,7 +63,7 @@ print_error() {
 if [ "$USE_SYSTEM_BINARY" = false ]; then
 	if [ "$NO_BUILD" = false ]; then
 		print_status "Building landrun binary..."
-		if ! go build -o landrun cmd/landrun/main.go; then
+		if ! go build -o landrun ./cmd/landrun; then
 			print_error "Failed to build landrun binary"
 			exit 1
 		fi

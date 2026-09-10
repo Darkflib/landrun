@@ -16,6 +16,29 @@ const (
 	maxPolicyFileSize = 1 << 20
 )
 
+var policyFileJSONKeys = map[string]struct{}{
+	"version":                 {},
+	"ro":                      {},
+	"rox":                     {},
+	"rw":                      {},
+	"rwx":                     {},
+	"unix":                    {},
+	"bind-tcp":                {},
+	"connect-tcp":             {},
+	"env":                     {},
+	"preserve-fd":             {},
+	"best-effort":             {},
+	"unrestricted-filesystem": {},
+	"unrestricted-network":    {},
+	"unrestricted-scoped":     {},
+	"ignore-missing":          {},
+	"log-disable-originating": {},
+	"log-enable-subprocesses": {},
+	"log-disable-subdomains":  {},
+	"ldd":                     {},
+	"add-exec":                {},
+}
+
 // policyFile mirrors the policy-related CLI flags. The command, log level,
 // version, and probe controls intentionally remain outside policy files.
 type policyFile struct {
@@ -155,13 +178,13 @@ func joinSlices[T any](first, second []T) []T {
 
 func rejectDuplicateJSONKeys(data []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
-	if err := consumeJSONValue(decoder); err != nil {
+	if err := consumeJSONValue(decoder, policyFileJSONKeys); err != nil {
 		return err
 	}
 	return expectJSONEOF(decoder)
 }
 
-func consumeJSONValue(decoder *json.Decoder) error {
+func consumeJSONValue(decoder *json.Decoder, allowedObjectKeys map[string]struct{}) error {
 	token, err := decoder.Token()
 	if err != nil {
 		return err
@@ -190,13 +213,18 @@ func consumeJSONValue(decoder *json.Decoder) error {
 				return fmt.Errorf("duplicate object key %q", key)
 			}
 			seen[key] = struct{}{}
-			if err := consumeJSONValue(decoder); err != nil {
+			if allowedObjectKeys != nil {
+				if _, allowed := allowedObjectKeys[key]; !allowed {
+					return fmt.Errorf("unknown field %q", key)
+				}
+			}
+			if err := consumeJSONValue(decoder, nil); err != nil {
 				return err
 			}
 		}
 	case '[':
 		for decoder.More() {
-			if err := consumeJSONValue(decoder); err != nil {
+			if err := consumeJSONValue(decoder, nil); err != nil {
 				return err
 			}
 		}

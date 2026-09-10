@@ -72,6 +72,8 @@ func TestLoadPolicyFileRejectsInvalidInput(t *testing.T) {
 		{name: "missing version", content: `{}`, wantErr: "unsupported policy file version 0"},
 		{name: "future version", content: `{"version": 2}`, wantErr: "unsupported policy file version 2"},
 		{name: "unknown field", content: `{"version": 1, "readonly": []}`, wantErr: "unknown field"},
+		{name: "case-folded field", content: `{"Version": 1}`, wantErr: `unknown field "Version"`},
+		{name: "case-folded duplicate", content: `{"version": 1, "Version": 2}`, wantErr: `unknown field "Version"`},
 		{name: "duplicate field", content: `{"version": 1, "ro": [], "ro": []}`, wantErr: `duplicate object key "ro"`},
 		{name: "trailing document", content: `{"version": 1} {"version": 1}`, wantErr: "exactly one JSON value"},
 		{name: "wrong type", content: `{"version": 1, "connect-tcp": ["443"]}`, wantErr: "cannot unmarshal"},
