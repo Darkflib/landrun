@@ -158,7 +158,9 @@ behavior, negative tests, and documented limitations.
 - [x] Publish signed tags, checksums, and a software bill of materials for
   release artifacts. The tag-gated workflow also publishes GitHub/Sigstore
   build-provenance and SBOM attestations.
-- Generate artifacts only from protected tags after all required checks pass.
+- [x] Generate artifacts only from protected tags after all required checks
+  pass. Owner-only creation and no-bypass immutability rulesets are active, and
+  the release gate verifies their publicly visible policy before it builds.
 - [x] Document which source revision and Go toolchain produced each artifact.
   CI forces and verifies Go VCS stamping, `landrun --version` reports both
   values, and each artifact bundle includes `landrun.buildinfo`.

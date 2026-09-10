@@ -50,6 +50,9 @@ semantics, and minimum Landlock ABI changes are called out explicitly.
   reports the exact source revision and Go toolchain embedded in the binary.
 - Added a signed-tag release pipeline for tested amd64 and arm64 artifacts,
   SHA-256 manifests, SPDX SBOMs, and GitHub/Sigstore attestations.
+- Protected `v*` release tags with separate owner-only creation and no-bypass
+  immutability rulesets; the release gate verifies their visible enforcement,
+  pattern, and rule types before it builds.
 
 ### Landlock compatibility
 

@@ -30,6 +30,11 @@ jobs:
       - name: Verify release tag
         run: ./ci/verify-release-tag.sh "$GITHUB_REF_NAME" "$GITHUB_SHA"
 
+      - name: Verify release tag protection
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./ci/verify-release-rulesets.sh
+
       - name: Verify required main checks
         env:
           GH_TOKEN: ${{ github.token }}
