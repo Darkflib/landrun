@@ -9,7 +9,7 @@ fi
 
 tag="$1"
 expected_commit="$2"
-signer_fingerprint="F6422E9F521C8EA3E540198425B3790094DC0CB7"
+signer_fingerprint="7B9596CF4FF2DCB9C263C2E5691F96C9A78EA0C2"
 
 if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "release tag must be an exact vMAJOR.MINOR.PATCH version: $tag" >&2
