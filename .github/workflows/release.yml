@@ -27,6 +27,15 @@ jobs:
       - name: Fetch main branch
         run: git fetch --no-tags origin main:refs/remotes/origin/main
 
+      # actions/checkout resolves the tag to GITHUB_SHA and writes that commit
+      # into refs/tags/<tag>, leaving a lightweight tag. The gate requires the
+      # annotated tag object to check its signature, so fetch the real one.
+      - name: Restore the annotated tag object
+        run: |
+          git fetch --force origin \
+            "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag
+
       - name: Verify release tag
         run: ./ci/verify-release-tag.sh "$GITHUB_REF_NAME" "$GITHUB_SHA"
 

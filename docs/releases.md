@@ -18,8 +18,8 @@ arm64 artifacts.
    ```bash
    git switch main
    git pull --ff-only
-   git tag --sign v0.1.19 --message "landrun v0.1.19"
-   git push origin v0.1.19
+   git tag --sign v0.1.20 --message "landrun v0.1.20"
+   git push origin v0.1.20
    ```
 
 Two active repository rulesets protect `refs/tags/v*`:
@@ -35,7 +35,10 @@ granting permission to rewrite it later.
 The release gate accepts exact `vMAJOR.MINOR.PATCH` names and pins the release
 signer's primary GPG fingerprint to
 `7B9596CF4FF2DCB9C263C2E5691F96C9A78EA0C2`. It rejects lightweight, unsigned,
-invalidly signed, off-main, version-mismatched, or unchecked tags. Changing the
+invalidly signed, off-main, version-mismatched, or unchecked tags. The gate job
+re-fetches the annotated tag object first: `actions/checkout` resolves a tag to
+its commit and writes that into `refs/tags/<tag>`, leaving a lightweight tag
+whose signature cannot be checked. Changing the
 trusted signing key requires a reviewed source change. The gate also verifies
 each ruleset's active state, tag target, exact pattern, and rule types before it
 builds. GitHub only returns bypass actors to ruleset administrators, so those
@@ -111,8 +114,8 @@ result is needed.
 The signed source tag remains independently inspectable with `git verify-tag`:
 
 ```bash
-git fetch origin tag v0.1.19
-git verify-tag v0.1.19
+git fetch origin tag v0.1.20
+git verify-tag v0.1.20
 ```
 
 Verification establishes who authorized the source tag, which workflow built
