@@ -1,0 +1,430 @@
+#cloud-config
+# Convert a Debian stable cloud image to unstable (sid) on first boot, to test
+# landrun against a bleeding-edge kernel and glibc outside the pinned UML
+# matrix in .github/workflows/abi-matrix.yml.
+#
+# Target: Scaleway Instance, Debian stable image. See docs/debian-sid-testbox.md.
+#
+# Progress:  tail -f /var/log/stable-to-sid.log
+# State:     cat /var/lib/stable-to-sid.state    (ok | hold | fail)
+# Unit:      systemctl status stable-to-sid
+#
+# On "hold" the machine deliberately does NOT reboot: a pre-reboot check
+# failed and the box is left reachable so it can be fixed over SSH.
+
+# Stop cloud-init rewriting sources.list from its own template.
+apt:
+  preserve_sources_list: true
+
+package_update: false
+package_upgrade: false
+
+write_files:
+  - path: /usr/local/sbin/stable-to-sid
+    owner: root:root
+    permissions: '0700'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      # ---- knobs -------------------------------------------------------
+      MIRROR="https://deb.debian.org/debian"
+      COMPONENTS="main contrib non-free non-free-firmware"
+      EXTRA_PACKAGES="build-essential git golang-go strace gdb pkg-config"
+      ENSURE_LANDLOCK_LSM=1        # set 0 to leave the kernel cmdline alone
+      WANT_DEB_SRC=0               # set 1 to add a deb-src stanza
+
+      # Console recovery. Cloud images ship with root locked, which leaves no
+      # way into the serial or emergency console if cloud-init fails to inject
+      # SSH keys. Generate a hash with:  openssl passwd -6
+      # Paste it between the SINGLE quotes below: a crypt hash is full of '$'
+      # and double quotes would let the shell eat it. Used for the console
+      # ONLY; SSH password authentication is never enabled by this file.
+      ROOT_PASSWORD_HASH=''
+
+      # cloud-init has no remaining job once the conversion is done, and sid's
+      # version stalls the boot. Set 0 to keep it active; see the snapshot note
+      # in docs/debian-sid-testbox.md before changing this.
+      DISABLE_CLOUD_INIT_AFTER=1
+      # ------------------------------------------------------------------
+
+      MARKER=/var/lib/stable-to-sid.done
+      STATE=/var/lib/stable-to-sid.state
+      LOG=/var/log/stable-to-sid.log
+
+      # stable-to-sid           convert, then gate and reboot (cloud-init path)
+      # stable-to-sid recheck   re-run the pre-reboot gate after repairing a
+      #                         held conversion, rebooting only if it passes
+      MODE="${1:-convert}"
+      case "$MODE" in
+        convert|recheck) ;;
+        *) echo "usage: $0 [recheck]" >&2; exit 2 ;;
+      esac
+
+      exec > >(tee -a "$LOG") 2>&1
+      trap 'rc=$?; echo "!!! failed at line $LINENO (exit $rc)"; echo fail > "$STATE"' ERR
+
+      if [[ $MODE == convert && -e $MARKER ]]; then
+        echo "already converted, nothing to do"
+        exit 0
+      fi
+
+      echo "=== $(date -Is) starting: $(. /etc/os-release; echo "$PRETTY_NAME"), kernel $(uname -r) ==="
+
+      export DEBIAN_FRONTEND=noninteractive
+      export APT_LISTCHANGES_FRONTEND=none
+      export NEEDRESTART_SUSPEND=1
+
+      APT_OPTS=(
+        -y
+        -o DPkg::Lock::Timeout=900
+        -o Dpkg::Options::=--force-confdef
+        -o Dpkg::Options::=--force-confold
+        -o Dpkg::Use-Pty=0
+      )
+
+      # Record the pre-upgrade boot state. Several of the checks below compare
+      # against this, because the upgrade can silently drop settings that only
+      # existed in packaging that sid has since restructured.
+      # PRESERVE is computed here rather than next to the grub edits so that
+      # 'recheck' validates the same tokens. Pre-reboot these all still read the
+      # old kernel's state, so a recheck derives them identically.
+      OLD_CMDLINE=$(cat /proc/cmdline)
+      OLD_IFACES=$(ip -br link | awk '{print $1}' | tr '\n' ' ')
+      PRESERVE=""
+      for tok in $OLD_CMDLINE; do
+        case "$tok" in
+          net.ifnames=*|biosdevname=*|console=*) PRESERVE="$PRESERVE $tok" ;;
+        esac
+      done
+      echo "pre-upgrade cmdline: $OLD_CMDLINE"
+      echo "pre-upgrade links:   $OLD_IFACES"
+
+      gate_fail=0
+      gate() {
+        local what="$1"; shift
+        if "$@" >/dev/null 2>&1; then
+          echo "  OK    $what"
+        else
+          echo "  FAIL  $what"
+          gate_fail=1
+        fi
+      }
+
+      # grub.cfg may name paths relative to a separate /boot partition. $2 is a
+      # root prefix, empty on a real system and set only by the test fixtures.
+      resolve_boot_path() {
+        local p="$1" root="${2:-}"
+        [[ -n $p ]] || return 1
+        [[ -e $root$p ]] && { echo "$root$p"; return 0; }
+        [[ -e $root/boot$p ]] && { echo "$root/boot$p"; return 0; }
+        return 1
+      }
+
+      same_version() { [[ -n $1 && $1 == "$2" ]]; }
+
+      # Validate the entry grub will actually boot. Globbing /boot passes when
+      # only the OLD kernel survives, and grepping the whole grub.cfg passes
+      # when a token appears only on a recovery or previous-kernel entry, so
+      # neither is a real check. Arguments default to the live system and exist
+      # so this can be exercised against fixtures.
+      check_default_entry() {
+        local cfg="${1:-/boot/grub/grub.cfg}"
+        local grub_default="${2-$( (. /etc/default/grub 2>/dev/null; echo "${GRUB_DEFAULT:-0}") )}"
+        local root="${3:-}"
+        local linux_line kpath ipath kfile ifile kver iver tok
+
+        if [[ $grub_default != 0 ]]; then
+          echo "  FAIL  GRUB_DEFAULT is '$grub_default'; this gate only resolves entry 0"
+          gate_fail=1
+          return 1
+        fi
+        if [[ ! -r $cfg ]]; then
+          echo "  FAIL  $cfg is missing or unreadable"
+          gate_fail=1
+          return 1
+        fi
+
+        linux_line=$(awk '$1 ~ /^linux(16|efi)?$/ {print; exit}' "$cfg")
+        kpath=$(awk '{print $2}' <<<"$linux_line")
+        ipath=$(awk '$1 ~ /^initrd(16|efi)?$/ {print $2; exit}' "$cfg")
+        kfile=$(resolve_boot_path "$kpath" "$root") || kfile=""
+        ifile=$(resolve_boot_path "$ipath" "$root") || ifile=""
+        kver=${kpath##*/vmlinuz-}
+        iver=${ipath##*/initrd.img-}
+
+        echo "  default entry kernel: ${kpath:-<none>}"
+        echo "  default entry initrd: ${ipath:-<none>}"
+        gate "default entry's kernel exists on disk" test -n "$kfile"
+        gate "default entry's initrd exists on disk" test -n "$ifile"
+        gate "default entry's initrd matches its kernel (${kver:-?})" \
+          same_version "$kver" "$iver"
+        for tok in $PRESERVE; do
+          gate "token on the default entry's command line: $tok" \
+            grep -qF -- "$tok" <<<"$linux_line"
+        done
+      }
+
+      run_gate() {
+        echo "--- pre-reboot checks ---"
+        gate_fail=0
+
+        local sshd_bin
+        sshd_bin=$(command -v sshd || echo /usr/sbin/sshd)
+        # sshd_config is kept at the old version by --force-confold; a directive
+        # retired between the stable and sid openssh makes sshd refuse to start.
+        gate "sshd config parses under the new openssh" "$sshd_bin" -t
+        gate "ssh is enabled for next boot" \
+          bash -c 'systemctl is-enabled ssh.service || systemctl is-enabled ssh.socket'
+
+        check_default_entry
+
+        local iface
+        for iface in $OLD_IFACES; do
+          [[ $iface == lo ]] && continue
+          gate "interface still present: $iface" ip link show "$iface"
+        done
+
+        [[ $gate_fail -eq 0 ]]
+      }
+
+      finish_and_reboot() {
+        # cloud-init has done everything it will ever do for this box: hostname
+        # is set, SSH keys are on disk, and this script has run. Keeping it
+        # enabled only adds a boot dependency on a package sid keeps moving.
+        if [[ $DISABLE_CLOUD_INIT_AFTER == 1 ]]; then
+          echo "disabling cloud-init for subsequent boots"
+          touch /etc/cloud/cloud-init.disabled
+        fi
+        touch "$MARKER"
+        echo ok > "$STATE"
+        sync
+        # Reboot out of band so we don't deadlock stopping our own transient unit.
+        echo "all checks passed; rebooting in 5s"
+        systemd-run --on-active=5 --timer-property=AccuracySec=1s systemctl reboot \
+          || { sleep 5; systemctl reboot; }
+      }
+
+      gate_then_reboot() {
+        if ! run_gate; then
+          echo
+          echo "!!! pre-reboot checks FAILED - holding the reboot."
+          echo "!!! the box is still on sid and still reachable. Fix the failures,"
+          echo "!!! then re-run the gate rather than rebooting blind:"
+          echo "!!!   /usr/local/sbin/stable-to-sid recheck"
+          echo "!!! That reboots only if every check passes. Forcing the marker"
+          echo "!!! (touch $MARKER) skips the gate entirely; last resort only."
+          echo hold > "$STATE"
+          exit 1
+        fi
+        finish_and_reboot
+      }
+
+      if [[ $MODE == recheck ]]; then
+        echo "=== $(date -Is) recheck: re-running the pre-reboot gate only ==="
+        gate_then_reboot
+        exit 0
+      fi
+
+      # Console recovery, done first so it survives any later failure. If
+      # cloud-init breaks badly enough that SSH keys never land, this password
+      # on the serial console is the only way back into the box.
+      if [[ -n $ROOT_PASSWORD_HASH ]]; then
+        echo "root:$ROOT_PASSWORD_HASH" | chpasswd -e
+        echo "root password set for console recovery"
+      else
+        echo "!! ROOT_PASSWORD_HASH is empty: root stays locked, so the serial"
+        echo "!! console offers no way in if cloud-init fails to inject SSH keys."
+        echo "!! Generate one with 'openssl passwd -6' and set it in this file."
+      fi
+      # cloud-init keeps its own copy of this file. If a hash is embedded, keep
+      # those copies root-only too. Note this does NOT contain the hash on
+      # Scaleway: the metadata service serves user-data to any process on the
+      # instance, so treat the console password as throwaway and reuse it
+      # nowhere. See docs/debian-sid-testbox.md.
+      if [[ -n $ROOT_PASSWORD_HASH ]]; then
+        chmod 0600 /var/lib/cloud/instance/user-data.txt* \
+                   /var/lib/cloud/instances/*/user-data.txt* 2>/dev/null || true
+      fi
+
+      # Make sure the serial console actually offers a login prompt to use it on.
+      systemctl enable serial-getty@ttyS0.service >/dev/null 2>&1 || true
+
+      # 1. Stop the periodic apt jobs fighting us for the dpkg lock, and keep
+      #    unattended-upgrades from silently tracking sid afterwards.
+      systemctl disable --now apt-daily.timer apt-daily-upgrade.timer \
+                              unattended-upgrades.service >/dev/null 2>&1 || true
+
+      # 2. Make the journal persistent. A failed boot after this point is only
+      #    diagnosable if its journal survives the reboot.
+      install -d -m 2755 /var/log/journal
+      systemd-tmpfiles --create --prefix /var/log/journal >/dev/null 2>&1 || true
+
+      # 3. Pin cloud-init to the datasource actually in use, and bound how long
+      #    it may spend looking. This does NOT fix the post-upgrade boot stall --
+      #    a run with it in place stalled identically, so the cause is inside
+      #    cloud-init 26.x, not the datasource list. Kept as a cheap control that
+      #    removes one variable. The stall is contained by the stage timeouts
+      #    below and by disabling cloud-init once the conversion is done.
+      ds_file=/var/lib/cloud/instance/datasource
+      if [[ -r $ds_file ]]; then
+        ds_raw=$(awk -F: '{print $1}' "$ds_file" | tr -d '[:space:]')
+        ds_name=${ds_raw#DataSource}
+        ds_name=${ds_name%Local}
+        if [[ -n $ds_name ]]; then
+          echo "pinning cloud-init datasource to: $ds_name"
+          install -d -m 0755 /etc/cloud/cloud.cfg.d
+          printf 'datasource_list: [ %s, None ]\n' "$ds_name" \
+            > /etc/cloud/cloud.cfg.d/99-datasource.cfg
+          # Only the network-metadata datasources accept these knobs.
+          if [[ $ds_name == Scaleway || $ds_name == Ec2 ]]; then
+            cat >> /etc/cloud/cloud.cfg.d/99-datasource.cfg <<EOF
+      datasource:
+        $ds_name:
+          max_wait: 30
+          timeout: 10
+          retries: 2
+      EOF
+          fi
+          echo "cloud-init cloud-init/datasources multiselect $ds_name, None" \
+            | debconf-set-selections 2>/dev/null || true
+        fi
+      else
+        echo "!! could not determine the active cloud-init datasource; not pinning"
+      fi
+
+      #    The cloud-init stage units ship with no start timeout, so a stage
+      #    that never completes hangs the boot rather than failing it. Bounding
+      #    only the local stage just moves the stall to the next one, so bound
+      #    every stage. On a test box, booting without cloud-init's blessing
+      #    beats not booting.
+      for unit in cloud-init-main cloud-init-local cloud-init-network \
+                  cloud-init cloud-config cloud-final; do
+        install -d -m 0755 "/etc/systemd/system/${unit}.service.d"
+        cat > "/etc/systemd/system/${unit}.service.d/10-timeout.conf" <<'EOF'
+      [Service]
+      TimeoutStartSec=120
+      EOF
+      done
+
+      # 4. Fold /etc/default/grub.d into /etc/default/grub. grub 2.14 drops that
+      #    directory, and on a cloud image it is where console= and net.ifnames=0
+      #    live. Losing net.ifnames=0 renames the NIC and strands the box.
+      if [[ -d /etc/default/grub.d ]] && compgen -G '/etc/default/grub.d/*.cfg' >/dev/null; then
+        echo "folding /etc/default/grub.d/*.cfg into /etc/default/grub"
+        {
+          echo ''
+          echo '# --- folded from /etc/default/grub.d by stable-to-sid ---'
+          cat /etc/default/grub.d/*.cfg
+          echo '# --- end fold ---'
+        } >> /etc/default/grub
+      fi
+
+      # Pin the boot settings that govern interface naming and console output
+      # directly, whatever supplied them before. PRESERVE was computed near the
+      # top so that 'recheck' validates exactly the same token list.
+      if [[ -n $PRESERVE ]]; then
+        echo "pinning kernel cmdline tokens:$PRESERVE"
+        {
+          echo '# --- boot settings pinned by stable-to-sid ---'
+          printf 'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT%s"\n' "$PRESERVE"
+          echo 'GRUB_DISABLE_OS_PROBER=true'
+        } >> /etc/default/grub
+      fi
+
+      # 5. Get the newest archive keyring while still on stable: sid's Release
+      #    is signed with the next cycle's key, which an old keyring won't have.
+      apt-get "${APT_OPTS[@]}" update
+      apt-get "${APT_OPTS[@]}" install debian-archive-keyring ca-certificates
+
+      # 6. Swap the sources. Everything existing is moved aside, not deleted --
+      #    Scaleway's own repo entries included, since they point at stable.
+      install -d -m 0755 /root/apt-backup
+      cp -a /etc/apt/sources.list /root/apt-backup/ 2>/dev/null || true
+      cp -a /etc/apt/sources.list.d /root/apt-backup/ 2>/dev/null || true
+
+      [[ -f /etc/apt/sources.list ]] && mv /etc/apt/sources.list /etc/apt/sources.list.disabled
+
+      shopt -s nullglob
+      for f in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+        [[ $f == /etc/apt/sources.list.d/debian-sid.sources ]] && continue
+        mv "$f" "$f.disabled"
+      done
+      shopt -u nullglob
+
+      # sid has no -security and no -updates suite; one stanza is the whole of it.
+      cat > /etc/apt/sources.list.d/debian-sid.sources <<EOF
+      Types: deb
+      URIs: $MIRROR
+      Suites: unstable
+      Components: $COMPONENTS
+      Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+      EOF
+
+      if [[ $WANT_DEB_SRC == 1 ]]; then
+        cat >> /etc/apt/sources.list.d/debian-sid.sources <<EOF
+
+      Types: deb-src
+      URIs: $MIRROR
+      Suites: unstable
+      Components: $COMPONENTS
+      Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+      EOF
+      fi
+
+      # 7. Last-resort keyring bootstrap if stable's keyring still can't verify sid.
+      if ! apt-get "${APT_OPTS[@]}" update; then
+        echo "!! sid Release did not verify with the stable keyring; bootstrapping over https"
+        apt-get "${APT_OPTS[@]}" -o Acquire::AllowInsecureRepositories=true update
+        apt-get "${APT_OPTS[@]}" -o APT::Get::AllowUnauthenticated=true install debian-archive-keyring
+        apt-get "${APT_OPTS[@]}" update
+      fi
+
+      # 8. The upgrade proper, in the order the release notes prescribe.
+      apt-get "${APT_OPTS[@]}" upgrade --without-new-pkgs
+      apt-get "${APT_OPTS[@]}" full-upgrade
+      apt-get "${APT_OPTS[@]}" --purge autoremove
+
+      if [[ -n ${EXTRA_PACKAGES// /} ]]; then
+        apt-get "${APT_OPTS[@]}" install $EXTRA_PACKAGES
+      fi
+
+      # 9. systemd and dbus are replaced underneath us during the upgrade, so
+      #    unit enablement in that window can fail silently ("Failed to connect
+      #    to system scope bus", "Reload daemon failed"). Redo the parts that
+      #    decide whether this box is reachable after the reboot.
+      systemctl daemon-reload || true
+      systemctl preset ssh.service >/dev/null 2>&1 || true
+      systemctl enable ssh.service >/dev/null 2>&1 || true
+
+      # 10. Landlock is compiled into Debian kernels but only registers if it is
+      #     in the active LSM list. Prepend it to whatever is live rather than
+      #     replacing the list, so AppArmor et al. survive.
+      if [[ $ENSURE_LANDLOCK_LSM == 1 && -r /sys/kernel/security/lsm ]] && command -v update-grub >/dev/null; then
+        lsms=$(cat /sys/kernel/security/lsm)
+        if [[ ,$lsms, != *,landlock,* ]]; then
+          echo "landlock absent from active LSMs ($lsms); adding to kernel cmdline"
+          install -d -m 0755 /etc/default/grub.d
+          printf 'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT lsm=landlock,%s"\n' "$lsms" \
+            >> /etc/default/grub
+        else
+          echo "landlock already active ($lsms)"
+        fi
+      fi
+
+      # Regenerate grub once, after every /etc/default/grub edit above.
+      command -v update-grub >/dev/null && update-grub
+
+      echo "=== $(date -Is) converted to: $(. /etc/os-release; echo "$PRETTY_NAME") ==="
+      dpkg-query -W -f='${Version}\n' libc6 2>/dev/null | sed 's/^/glibc: /' || true
+      dpkg-query -W -f='${Package} ${Version}\n' 'linux-image-*' 2>/dev/null | sed 's/^/kernel: /' || true
+
+      # 11. Pre-reboot gate. Everything it checks decides whether this box
+      #     comes back on the network, so a failure holds the reboot rather
+      #     than spending the only working shell we have.
+      gate_then_reboot
+
+runcmd:
+  - systemd-run --unit=stable-to-sid --description="Debian stable to sid conversion" --no-block /usr/local/sbin/stable-to-sid
+
+final_message: "cloud-init done after $UPTIME s; sid conversion running detached, see /var/log/stable-to-sid.log"

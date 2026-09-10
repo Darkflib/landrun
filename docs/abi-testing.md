@@ -36,6 +36,11 @@ runs on amd64. The regular build and integration workflows separately compile
 and test the native static artifact on both amd64 and arm64. Other architectures
 are not release targets.
 
+These pinned kernels are the authoritative compatibility signal. A disposable
+[Debian sid test box](debian-sid-testbox.md) covers the complementary case of a
+distribution kernel and a current userland, but no result from it gates a
+release.
+
 ## Updating the pins
 
 1. Select an exact commit from the corresponding `linux-X.Y.y` branch in
