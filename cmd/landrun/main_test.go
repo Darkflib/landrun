@@ -95,3 +95,9 @@ func TestRunReturnsLauncherErrorForRepeatedPolicyFile(t *testing.T) {
 		t.Fatalf("run returned %d, want %d", got, launcherErrorExitCode)
 	}
 }
+
+func TestRunReturnsLauncherErrorForEmptyPolicyPath(t *testing.T) {
+	if got := run([]string{"landrun", "--policy=", "--", "true"}); got != launcherErrorExitCode {
+		t.Fatalf("run returned %d, want %d", got, launcherErrorExitCode)
+	}
+}

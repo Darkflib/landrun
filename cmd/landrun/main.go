@@ -165,7 +165,11 @@ func newCommand() *cli.Command {
 			}
 
 			policy := launchPolicy{}
-			if policyPath := c.String("policy"); policyPath != "" {
+			if c.IsSet("policy") {
+				policyPath := c.String("policy")
+				if policyPath == "" {
+					return errors.New("policy file path must not be empty")
+				}
 				filePolicy, err := loadPolicyFile(policyPath)
 				if err != nil {
 					return fmt.Errorf("invalid policy file %q: %w", policyPath, err)
