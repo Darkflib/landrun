@@ -80,6 +80,10 @@ commit, if the tree is marked modified, or if the embedded Go version differs
 from the selected CI toolchain. Release artifacts should preserve these three
 files together.
 
+Tagged releases additionally publish an SPDX SBOM, SHA-256 manifest, and signed
+GitHub/Sigstore attestations. See [Release process and verification](docs/releases.md)
+for the signed-tag gate and verification commands.
+
 ### Distros
 
 #### Arch (AUR)

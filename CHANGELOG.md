@@ -48,6 +48,8 @@ semantics, and minimum Landlock ABI changes are called out explicitly.
   enabling new access-right families.
 - CI artifacts now carry verified Go build metadata, and `landrun --version`
   reports the exact source revision and Go toolchain embedded in the binary.
+- Added a signed-tag release pipeline for tested amd64 and arm64 artifacts,
+  SHA-256 manifests, SPDX SBOMs, and GitHub/Sigstore attestations.
 
 ### Landlock compatibility
 

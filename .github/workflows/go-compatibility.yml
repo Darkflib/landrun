@@ -81,13 +81,17 @@ jobs:
         run: go test -race -count=1 ./...
 
       - name: Check integration script syntax
-        run: bash -n test.sh ci/test-abi-boundary.sh
+        run: >-
+          bash -n test.sh ci/test-abi-boundary.sh
+          ci/verify-release-tag.sh ci/verify-release-checks.sh
 
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y shellcheck
 
       - name: Lint integration script
-        run: shellcheck test.sh ci/test-abi-boundary.sh
+        run: >-
+          shellcheck test.sh ci/test-abi-boundary.sh
+          ci/verify-release-tag.sh ci/verify-release-checks.sh
 
       - name: Lint GitHub Actions workflows
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
