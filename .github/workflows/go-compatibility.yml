@@ -84,6 +84,7 @@ jobs:
         run: >-
           bash -n test.sh ci/test-abi-boundary.sh
           ci/verify-release-tag.sh ci/verify-release-checks.sh
+          ci/verify-release-rulesets.sh
 
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y shellcheck
@@ -92,6 +93,7 @@ jobs:
         run: >-
           shellcheck test.sh ci/test-abi-boundary.sh
           ci/verify-release-tag.sh ci/verify-release-checks.sh
+          ci/verify-release-rulesets.sh
 
       - name: Lint GitHub Actions workflows
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
