@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -55,6 +56,76 @@ func TestRunFileReplacementHelper(t *testing.T) {
 	if err := RunFile(file, []string{target, "-test.run=^TestRunFileReplacementHelper$"}, env); err != nil {
 		t.Fatalf("failed to execute opened target: %v", err)
 	}
+}
+
+// Multi-call binaries (uutils, busybox) pick the tool from AT_EXECFN, so an
+// unreplaced target must be executed by its path, not as /dev/fd/N.
+func TestRunFileKeepsThePathAsExecName(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "target")
+	copyExecutable(t, os.Args[0], target)
+
+	cmd := osexec.Command(os.Args[0], "-test.run=^TestRunFileExecNameHelper$")
+	cmd.Env = append(os.Environ(),
+		"LANDRUN_EXECFN_HELPER=1",
+		"LANDRUN_EXECFN_TARGET="+target,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("exec name check failed: %v\n%s", err, out)
+	}
+}
+
+func TestRunFileExecNameHelper(t *testing.T) {
+	if os.Getenv("LANDRUN_EXECFN_HELPER") != "1" {
+		return
+	}
+	target := os.Getenv("LANDRUN_EXECFN_TARGET")
+	if os.Getenv("LANDRUN_EXECFN_EXECUTED") == "1" {
+		if got := execFn(t); got != target {
+			t.Fatalf("AT_EXECFN = %q, want %q", got, target)
+		}
+		return
+	}
+	file, err := OpenExecutable(target)
+	if err != nil {
+		t.Fatalf("failed to open target: %v", err)
+	}
+	defer file.Close()
+	env := append(os.Environ(), "LANDRUN_EXECFN_EXECUTED=1")
+	if err := RunFile(file, []string{target, "-test.run=^TestRunFileExecNameHelper$"}, env); err != nil {
+		t.Fatalf("failed to execute opened target: %v", err)
+	}
+}
+
+// execFn reads AT_EXECFN, the name the kernel recorded for this exec.
+func execFn(t *testing.T) string {
+	t.Helper()
+	auxv, err := os.ReadFile("/proc/self/auxv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const atExecFn = 31
+	word := int(unsafe.Sizeof(uintptr(0)))
+	for i := 0; i+2*word <= len(auxv); i += 2 * word {
+		key := *(*uintptr)(unsafe.Pointer(&auxv[i]))
+		if key != atExecFn {
+			continue
+		}
+		ptr := *(*uintptr)(unsafe.Pointer(&auxv[i+word]))
+		mem, err := os.Open("/proc/self/mem")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer mem.Close()
+		buf := make([]byte, 4096)
+		n, _ := mem.ReadAt(buf, int64(ptr))
+		name, _, found := strings.Cut(string(buf[:n]), "\x00")
+		if !found {
+			t.Fatal("AT_EXECFN is not NUL-terminated within 4 KiB")
+		}
+		return name
+	}
+	t.Fatal("no AT_EXECFN in auxv")
+	return ""
 }
 
 func TestRunFileRejectsDirectScriptWithoutExposingDescriptor(t *testing.T) {

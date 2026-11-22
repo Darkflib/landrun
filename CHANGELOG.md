@@ -5,6 +5,19 @@ semantics, and minimum Landlock ABI changes are called out explicitly.
 
 ## [Unreleased]
 
+### Fixed
+
+- Multi-call binaries run again, including Ubuntu 26.04's uutils coreutils
+  (`cat`, `ls` and so on) and busybox. Since 0.1.20 every command was executed
+  from its descriptor, so the kernel recorded its name as `/dev/fd/N`, and
+  these binaries pick the tool from that name. An ELF command whose path
+  still names the file opened before the sandbox (same device and inode) is
+  now executed by that path. A replaced path and any non-ELF target, shebang
+  scripts included, still go through the descriptor, so the 0.1.20 security
+  behaviour holds. A path swapped in the gap between the inode check and the
+  exec would still run; to do that, an attacker must be able to write to the
+  command's directory.
+
 ## [0.1.20] - 2026-09-10
 
 Versions 0.1.18 and 0.1.19 were tagged but never published. Both release runs
